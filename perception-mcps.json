@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "geo-perception": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "mcps/perception",
+        "run",
+        "python",
+        "-m",
+        "perception_mcp"
+      ],
+      "env": {
+        "ACTIVE_GEO_MODELS_DIR": "models",
+        "ACTIVE_GEO_CACHE_DIR": ".active-perception/cache",
+        "ACTIVE_GEO_CPU_THREADS": "auto",
+        "ACTIVE_GEO_ONNX_PROVIDER": "auto",
+        "ACTIVE_GEO_OCR_MAX_SIDE": "2400"
+      },
+      "tool_timeout_sec": 90
+    }
+  }
+}

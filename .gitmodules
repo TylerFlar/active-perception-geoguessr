@@ -1,0 +1,8 @@
+[submodule "third_party/perception/RapidOCR"]
+	path = third_party/perception/RapidOCR
+	url = https://github.com/RapidAI/RapidOCR.git
+	shallow = true
+[submodule "third_party/perception/fast-alpr"]
+	path = third_party/perception/fast-alpr
+	url = https://github.com/ankandrew/fast-alpr.git
+	shallow = true

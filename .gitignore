@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.active-perception/
+models/
+mcps/**/.venv/
+__pycache__/
+.pytest_cache/
+*.tsbuildinfo
