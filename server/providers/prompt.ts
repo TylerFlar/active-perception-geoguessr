@@ -41,15 +41,71 @@ export function buildNavigatorGeographerPrompt(params: {
     history.length ? JSON.stringify(history, null, 2) : "[]",
     "",
     "Action policy:",
+    "- COMMIT EARLY: your top priority is producing the final JSON output. Never spend more than 3 perception/inspection turns before committing to an answer.",
+    "- If you can identify the country or region from architecture, vegetation, or general visual cues alone, that is sufficient — country/region with moderate confidence is a useful guess, do not chase city-level precision at the cost of producing no answer at all.",
+    "- Perception MCP tools (ocr_read_text, read_plate, place_lookup, make_crops) are OPTIONAL aids. If the first OCR/crop attempt returns no useful text, do not retry with different coordinates — fall back to your direct visual analysis of the image and commit to a guess based on it.",
     "- If a small sign, plate, road shield, bollard, utility pole, road marking, distinctive vegetation, or architectural cue is visible, inspect or zoom toward it.",
     "- If the current frame is weak, pan to another heading before moving.",
     "- Move only when the available link direction is likely to expose more signs, intersections, businesses, road shields, or settlement clues.",
-    "- Return status=final when the evidence is strong enough for a useful guess.",
-    "- For navigator.action, include every action field. Use null for fields that do not apply to the selected action type.",
+    "- Return status=final when the evidence is strong enough for a useful guess. \"Useful\" means country-level confidence ≥ 0.5, not city-level certainty.",
+    "- For navigator.action, include every action field. Use null only for fields that do not apply to the selected action type.",
+    "- The selected action type determines which fields must be non-null:",
+    "  - type=pan: headingDelta must be a number (use 0 for no horizontal change). pitchDelta is optional.",
+    "  - type=zoom: zoomDelta must be a number.",
+    "  - type=move: linkIndex must be a non-negative integer that matches an available move.",
+    "  - type=inspect: target must be one of sign, plate, road, vegetation, architecture, utility, sky, other.",
+    "  - type=hold: only reason matters; every other field should be null.",
     "- If there is no final guess yet, set finalGuess to an object with country/region/city/lat/lng null, confidence 0, and evidence [].",
     "",
-    "Return only JSON matching the provided schema. No markdown."
-    + " Optional schema fields are still required by the transport; use null when a value is unknown."
+    "OUTPUT FORMAT — CRITICAL:",
+    "- Your final assistant message MUST be exactly one JSON object that matches the provided schema.",
+    "- The very first character of your final message MUST be `{`. The very last character MUST be `}`.",
+    "- No markdown. No bold. No headings. No bullet lists. No preamble like 'Here is the answer:'. No code fences. No explanation text before or after the JSON.",
+    "- All schema fields are required by the transport. Use null when a value does not apply; do not omit fields.",
+    "- Example of a valid final message (values are illustrative only):",
+    JSON.stringify({
+      status: "final",
+      navigator: {
+        observation: "French Haussmann facade visible on left; Notre-Dame spire in the distance.",
+        perceptionCalls: [],
+        action: {
+          type: "hold",
+          headingDelta: null,
+          pitchDelta: null,
+          zoomDelta: null,
+          linkIndex: null,
+          target: null,
+          heading: null,
+          pitch: null,
+          zoom: null,
+          reason: "Sufficient evidence for final guess."
+        }
+      },
+      geographer: {
+        hypotheses: [
+          {
+            country: "France",
+            region: "Île-de-France",
+            city: "Paris",
+            lat: 48.8566,
+            lng: 2.3522,
+            confidence: 0.82,
+            evidence: ["French Second Empire architecture", "Notre-Dame spire visible"]
+          }
+        ],
+        instructionToNavigator: null,
+        finalGuess: {
+          country: "France",
+          region: "Île-de-France",
+          city: "Paris",
+          lat: 48.8566,
+          lng: 2.3522,
+          confidence: 0.82,
+          evidence: ["French Second Empire architecture", "Notre-Dame spire visible"]
+        }
+      },
+      uiMessage: "Final guess: Paris, France (confidence 0.82)."
+    })
   ].join("\n");
 }
 

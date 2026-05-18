@@ -5,7 +5,8 @@ description = "Local perception MCP tools for active street-level geolocation."
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "fastmcp>=2.0.0",
-    "fast-alpr[onnx-gpu]>=0.4.0",
+    "fast-alpr[onnx-gpu]>=0.4.0; sys_platform != 'darwin'",
+    "fast-alpr[onnx]>=0.4.0; sys_platform == 'darwin'",
     "geopy>=2.4",
     "mcp>=1.5.0",
     "numpy>=1.26",

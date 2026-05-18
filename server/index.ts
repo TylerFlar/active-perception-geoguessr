@@ -14,7 +14,7 @@ const settings = loadSettings();
 const provider = createAgentProvider(settings);
 const app = express();
 
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "8mb" }));
 app.use("/snapshots", express.static(settings.snapshotDir));
 
 app.get("/api/health", (_request, response) => {
@@ -33,6 +33,36 @@ app.get("/api/config", (_request, response) => {
     mcpServers: Object.keys(settings.mcpConfig.mcpServers),
     perceptionTools: DEFAULT_PERCEPTION_TOOLS
   });
+});
+
+app.get("/api/panoramax/image", async (request, response) => {
+  const url = typeof request.query.url === "string" ? request.query.url : "";
+  const upstreamUrl = parseAllowedPanoramaxUrl(url);
+  if (!upstreamUrl) {
+    response.status(400).send("Invalid Panoramax image URL.");
+    return;
+  }
+
+  try {
+    const upstream = await fetch(upstreamUrl);
+    if (!upstream.ok) {
+      response.status(upstream.status).send(`Panoramax image fetch failed with ${upstream.status}.`);
+      return;
+    }
+
+    const contentType = upstream.headers.get("content-type") || "application/octet-stream";
+    if (!contentType.includes("image")) {
+      response.status(415).send("Panoramax URL did not return an image.");
+      return;
+    }
+
+    response.setHeader("content-type", contentType);
+    response.setHeader("cache-control", "public, max-age=86400");
+    response.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    response.status(502).send(`Panoramax image proxy failed: ${message}`);
+  }
 });
 
 app.get("/api/runs/:runId/logs", (request, response) => {
@@ -60,12 +90,13 @@ app.post("/api/agent/step", async (request, response) => {
   const log = createRunLogger(runId);
   log({ source: "server", level: "info", message: `Starting turn ${stepRequest.history.length + 1}` });
   const snapshot = await capturePanoramaxSnapshot({
-    pano: stepRequest.pano,
-    snapshotDir: settings.snapshotDir
+    snapshotDir: settings.snapshotDir,
+    snapshotDataUrl: stepRequest.snapshotDataUrl
   });
   if (snapshot.filePath) {
     log({ source: "server", level: "info", message: "Captured Panoramax snapshot", detail: { path: snapshot.filePath } });
-  } else if (snapshot.warning) {
+  }
+  if (snapshot.warning) {
     log({ source: "server", level: "warn", message: snapshot.warning });
   }
 
@@ -183,7 +214,8 @@ function normalizeStepRequest(value: unknown): AgentStepRequest {
     history: Array.isArray(value.history) ? (value.history as AgentTurn[]) : [],
     runGoal: typeof value.runGoal === "string" ? value.runGoal : undefined,
     runId: typeof value.runId === "string" ? value.runId : undefined,
-    maxTurns: typeof value.maxTurns === "number" ? value.maxTurns : undefined
+    maxTurns: typeof value.maxTurns === "number" ? value.maxTurns : undefined,
+    snapshotDataUrl: typeof value.snapshotDataUrl === "string" ? value.snapshotDataUrl : undefined
   };
 }
 
@@ -195,7 +227,6 @@ function normalizePanoState(value: unknown): PanoState {
     panoId: typeof value.panoId === "string" ? value.panoId : undefined,
     sequenceId: typeof value.sequenceId === "string" ? value.sequenceId : undefined,
     source: "panoramax",
-    imageUrl: typeof value.imageUrl === "string" ? value.imageUrl : undefined,
     lat: numberValue(value.lat, "pano.lat"),
     lng: numberValue(value.lng, "pano.lng"),
     heading: numberValue(value.heading, "pano.heading"),
@@ -223,6 +254,19 @@ function numberValue(value: unknown, label: string): number {
     return value;
   }
   throw new Error(`${label} must be a finite number.`);
+}
+
+function parseAllowedPanoramaxUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    const allowed = new URL(settings.panoramaxEndpoint);
+    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.origin !== allowed.origin) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

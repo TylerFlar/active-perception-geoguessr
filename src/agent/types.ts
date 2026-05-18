@@ -40,7 +40,6 @@ export interface PanoState {
   panoId?: string;
   sequenceId?: string;
   source: "panoramax";
-  imageUrl?: string;
   lat: number;
   lng: number;
   heading: number;
@@ -93,6 +92,7 @@ export interface AgentStepRequest {
   runGoal?: string;
   runId?: string;
   maxTurns?: number;
+  snapshotDataUrl?: string;
 }
 
 export interface AgentStepResponse {

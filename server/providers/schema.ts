@@ -48,16 +48,25 @@ const OptionalGeoHypothesisSchema = z.preprocess(
   GeoHypothesisSchema.optional()
 );
 
+const NullableHeadingDeltaSchema = z.preprocess(
+  (value) => value === null ? 0 : value,
+  z.number().min(-180).max(180)
+);
+const NullableZoomDeltaSchema = z.preprocess(
+  (value) => value === null ? 0 : value,
+  z.number().min(-4).max(4)
+);
+
 const PanActionSchema = z.object({
   type: z.literal("pan"),
-  headingDelta: z.number().min(-180).max(180),
+  headingDelta: NullableHeadingDeltaSchema,
   pitchDelta: OptionalPitchDeltaSchema,
   reason: z.string().min(1)
 });
 
 const ZoomActionSchema = z.object({
   type: z.literal("zoom"),
-  zoomDelta: z.number().min(-4).max(4),
+  zoomDelta: NullableZoomDeltaSchema,
   reason: z.string().min(1)
 });
 
