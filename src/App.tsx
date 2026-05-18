@@ -1,6 +1,7 @@
 import { AlertCircle, LocateFixed, Navigation, Play, RotateCcw, Search, Square, StepForward } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentStepResponse, AgentTurn, PanoAction, PanoState } from "./agent/types";
+import { PanoramaViewer, type PanoramaViewerHandle } from "./PanoramaViewer";
 
 interface AppConfig {
   panoramaxEndpoint: string;
@@ -54,6 +55,7 @@ const MAX_AUTO_TURNS = 8;
 export default function App() {
   const autoRunRef = useRef(false);
   const dragRef = useRef<{ x: number; y: number; view: ImageView } | null>(null);
+  const viewerRef = useRef<PanoramaViewerHandle | null>(null);
 
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configError, setConfigError] = useState("");
@@ -66,6 +68,7 @@ export default function App() {
   const [locationText, setLocationText] = useState(`${DEFAULT_LOCATION.lat}, ${DEFAULT_LOCATION.lng}`);
   const [status, setStatus] = useState("Idle");
   const [isRunning, setIsRunning] = useState(false);
+  const [isViewerReady, setIsViewerReady] = useState(false);
 
   useEffect(() => {
     void fetch("/api/config")
@@ -121,6 +124,11 @@ export default function App() {
   }, [history]);
 
   const imageUrl = feature ? displayImageUrl(feature) : undefined;
+  const viewerImageUrl = imageUrl ? proxiedImageUrl(imageUrl) : undefined;
+
+  useEffect(() => {
+    setIsViewerReady(false);
+  }, [viewerImageUrl]);
 
   const loadLocation = useCallback(() => {
     const parsed = parseLatLng(locationText);
@@ -148,6 +156,7 @@ export default function App() {
       }
 
       setStatus("Thinking");
+      const snapshotDataUrl = await captureCurrentView(viewerRef.current);
       const response = await fetch("/api/agent/step", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -155,7 +164,8 @@ export default function App() {
           pano: current,
           history: nextHistory,
           runId: options?.runId,
-          maxTurns: MAX_AUTO_TURNS
+          maxTurns: MAX_AUTO_TURNS,
+          snapshotDataUrl
         })
       });
       const payload = (await response.json()) as AgentStepResponse;
@@ -283,11 +293,11 @@ export default function App() {
         </div>
 
         <div className="runControls">
-          <button className="primaryButton" type="button" onClick={startLoop} disabled={isRunning || !feature} title="Go">
+          <button className="primaryButton" type="button" onClick={startLoop} disabled={isRunning || !feature || !isViewerReady} title="Go">
             <Play size={18} />
             <span>Go</span>
           </button>
-          <button type="button" onClick={stepOnce} disabled={isRunning || !feature} title="Step">
+          <button type="button" onClick={stepOnce} disabled={isRunning || !feature || !isViewerReady} title="Step">
             <StepForward size={18} />
           </button>
           <button type="button" onClick={stopLoop} disabled={!isRunning} title="Stop">
@@ -327,14 +337,12 @@ export default function App() {
             dragRef.current = null;
           }}
         >
-          {imageUrl ? (
-            <div
-              className="panoramaxImage"
-              style={{
-                backgroundImage: `url("${imageUrl}")`,
-                backgroundSize: `${100 + view.zoom * 42}%`,
-                backgroundPosition: `${view.heading / 3.6}% ${50 - view.pitch / 1.8}%`
-              }}
+          {viewerImageUrl ? (
+            <PanoramaViewer
+              ref={viewerRef}
+              imageUrl={viewerImageUrl}
+              view={view}
+              onReadyChange={setIsViewerReady}
             />
           ) : (
             <MissingKey message={configError || "No Panoramax image loaded"} />
@@ -475,7 +483,6 @@ function featureToPanoState(feature: PanoramaxFeature, view: ImageView): PanoSta
     source: "panoramax",
     panoId: feature.id,
     sequenceId: feature.collection,
-    imageUrl: agentImageUrl(feature),
     lat,
     lng,
     heading: view.heading,
@@ -512,6 +519,21 @@ function agentImageUrl(feature: PanoramaxFeature): string | undefined {
 
 function findAsset(feature: PanoramaxFeature, role: string, type: string): PanoramaxAsset | undefined {
   return Object.values(feature.assets || {}).find((asset) => asset.roles?.includes(role) && asset.type === type);
+}
+
+function proxiedImageUrl(url: string): string {
+  return `/api/panoramax/image?url=${encodeURIComponent(url)}`;
+}
+
+async function captureCurrentView(viewer: PanoramaViewerHandle | null): Promise<string | undefined> {
+  if (!viewer) {
+    return undefined;
+  }
+  try {
+    return await viewer.captureJpeg();
+  } catch {
+    return undefined;
+  }
 }
 
 function normalizeEndpoint(endpoint: string): string {
