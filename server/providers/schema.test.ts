@@ -65,6 +65,80 @@ describe("agent output schema", () => {
     expect(parsed.geographer.hypotheses[0].country).toBeUndefined();
     expect(parsed.geographer.finalGuess).toBeUndefined();
   });
+
+  it("coerces null headingDelta/zoomDelta on pan and zoom actions", () => {
+    const panParsed = AgentModelOutputSchema.parse({
+      status: "continue",
+      navigator: {
+        observation: "Model returned a pan but did not specify a heading delta.",
+        perceptionCalls: [],
+        action: {
+          type: "pan",
+          headingDelta: null,
+          pitchDelta: null,
+          zoomDelta: null,
+          linkIndex: null,
+          target: null,
+          heading: null,
+          pitch: null,
+          zoom: null,
+          reason: "Try a small pan."
+        }
+      },
+      geographer: {
+        hypotheses: [],
+        instructionToNavigator: null,
+        finalGuess: {
+          country: null,
+          region: null,
+          city: null,
+          lat: null,
+          lng: null,
+          confidence: 0,
+          evidence: []
+        }
+      },
+      uiMessage: "Continue."
+    });
+
+    expect(panParsed.navigator.action).toMatchObject({ type: "pan", headingDelta: 0 });
+
+    const zoomParsed = AgentModelOutputSchema.parse({
+      status: "continue",
+      navigator: {
+        observation: "Model returned a zoom but did not specify a delta.",
+        perceptionCalls: [],
+        action: {
+          type: "zoom",
+          headingDelta: null,
+          pitchDelta: null,
+          zoomDelta: null,
+          linkIndex: null,
+          target: null,
+          heading: null,
+          pitch: null,
+          zoom: null,
+          reason: "Try zooming."
+        }
+      },
+      geographer: {
+        hypotheses: [],
+        instructionToNavigator: null,
+        finalGuess: {
+          country: null,
+          region: null,
+          city: null,
+          lat: null,
+          lng: null,
+          confidence: 0,
+          evidence: []
+        }
+      },
+      uiMessage: "Continue."
+    });
+
+    expect(zoomParsed.navigator.action).toMatchObject({ type: "zoom", zoomDelta: 0 });
+  });
 });
 
 function collectMissingRequiredKeys(value: unknown, path: string, misses: string[]): void {

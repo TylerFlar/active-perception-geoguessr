@@ -66,10 +66,13 @@ export class ClaudeCliProvider implements AgentProvider {
     const prompt = promptWithImagePath(input.prompt, input.snapshotPath);
     const args = [
       "--print",
+      "--verbose",
       "--output-format",
       "stream-json",
       "--permission-mode",
       "bypassPermissions",
+      "--max-turns",
+      "10",
       "--strict-mcp-config",
       "--mcp-config",
       buildClaudeMcpConfig(input.settings.mcpConfig),
@@ -79,7 +82,7 @@ export class ClaudeCliProvider implements AgentProvider {
     ];
 
     if (input.settings.claudeModel) {
-      args.splice(2, 0, "--model", input.settings.claudeModel);
+      args.unshift("--model", input.settings.claudeModel);
     }
 
     const env = {
