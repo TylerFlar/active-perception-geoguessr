@@ -12,6 +12,8 @@ export interface PerceptionPrepass {
   elapsedSec?: number;
   ocrTexts: PrepassOcrText[];
   plates: unknown[];
+  ocrError?: string;
+  plateError?: string;
   note?: string;
 }
 
@@ -30,7 +32,7 @@ export async function runPerceptionPrepass(params: {
   try {
     const stdout = await spawnAnalyze(mcpDir, params.imagePath);
     const parsed = JSON.parse(lastJsonLine(stdout)) as Record<string, unknown>;
-    const result = normalize(parsed);
+    const result = normalizePerceptionPrepass(parsed);
     params.log?.({
       source: "mcp",
       level: "info",
@@ -86,23 +88,42 @@ function lastJsonLine(stdout: string): string {
   throw new Error("analyze produced no JSON output");
 }
 
-function normalize(parsed: Record<string, unknown>): PerceptionPrepass {
+export function normalizePerceptionPrepass(parsed: Record<string, unknown>): PerceptionPrepass {
   const ocr = isRecord(parsed.ocr) ? parsed.ocr : {};
   const plate = isRecord(parsed.plate) ? parsed.plate : {};
-  const ocrTexts = Array.isArray(ocr.texts)
+  const ocrError = toolError(ocr, "OCR");
+  const plateError = toolError(plate, "ALPR");
+  const ocrTexts = !ocrError && Array.isArray(ocr.texts)
     ? ocr.texts.flatMap((entry) =>
         isRecord(entry) && typeof entry.text === "string"
           ? [{ text: entry.text, confidence: typeof entry.confidence === "number" ? entry.confidence : null }]
           : []
       )
     : [];
-  const plates = Array.isArray(plate.raw) ? plate.raw : [];
+  const plates = !plateError && Array.isArray(plate.raw) ? plate.raw : [];
+  const failures = [
+    ocrError ? `OCR failed: ${ocrError}` : undefined,
+    plateError ? `ALPR failed: ${plateError}` : undefined
+  ].filter((entry): entry is string => Boolean(entry));
   return {
-    ok: parsed.ok === true,
+    ok: parsed.ok === true && failures.length === 0,
     elapsedSec: typeof parsed.elapsed_sec === "number" ? parsed.elapsed_sec : undefined,
     ocrTexts,
-    plates
+    plates,
+    ocrError,
+    plateError,
+    note: failures.length ? failures.join("; ") : undefined
   };
+}
+
+function toolError(result: Record<string, unknown>, toolName: string): string | undefined {
+  if (result.ok === true) {
+    return undefined;
+  }
+  if (typeof result.error === "string" && result.error.trim()) {
+    return result.error;
+  }
+  return `${toolName} returned no successful result`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
