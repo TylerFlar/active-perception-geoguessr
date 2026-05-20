@@ -8,7 +8,12 @@ import {
 } from "../../src/mcp/perceptionContracts";
 import { agentOutputJsonSchema } from "./schema";
 import type { AgentProvider, ProviderRunInput } from "./provider";
-import { extractResultTextFromJsonl, parseAgentOutput } from "./json";
+import {
+  extractResultTextFromJsonl,
+  extractStructuredOutputFromJsonl,
+  parseAgentOutput,
+  parseAgentOutputObject
+} from "./json";
 
 export class CodexCliProvider implements AgentProvider {
   name = "codex" as const;
@@ -96,6 +101,15 @@ export class ClaudeCliProvider implements AgentProvider {
       throw new Error(`claude exited ${result.exitCode}: ${result.stderr || result.stdout}`);
     }
     input.log?.({ source: "provider", level: "info", message: "Claude CLI completed" });
+    const structured = extractStructuredOutputFromJsonl(result.stdout);
+    if (structured !== undefined) {
+      return parseAgentOutputObject(structured);
+    }
+    input.log?.({
+      source: "provider",
+      level: "warn",
+      message: "No structured_output on result event; falling back to text parsing."
+    });
     return parseAgentOutput(extractResultTextFromJsonl(result.stdout));
   }
 }

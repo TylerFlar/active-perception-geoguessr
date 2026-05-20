@@ -1,11 +1,13 @@
 import type { AgentStepRequest, AgentTurn, PanoState } from "../../src/agent/types";
 import { summarizeToolCatalog, type McpConfigFile } from "../../src/mcp/perceptionContracts";
+import type { PerceptionPrepass } from "../perceptionPrepass";
 
 export function buildNavigatorGeographerPrompt(params: {
   request: AgentStepRequest;
   snapshotPath?: string;
   snapshotWarning?: string;
   mcpConfig: McpConfigFile;
+  perception?: PerceptionPrepass;
 }): string {
   const history = params.request.history.slice(-10).map(historyTurnForPrompt);
   const redactedPano = redactedPanoForPrompt(params.request.pano);
@@ -30,6 +32,7 @@ export function buildNavigatorGeographerPrompt(params: {
       ? `The current street-level image is attached and also available at this local path for tools that accept image paths: ${params.snapshotPath}`
       : `No current snapshot file is available. Snapshot warning: ${params.snapshotWarning || "none"}`,
     "",
+    perceptionPrepassSection(params.perception),
     "Available perception MCP tools:",
     summarizeToolCatalog(),
     "",
@@ -106,6 +109,51 @@ export function buildNavigatorGeographerPrompt(params: {
       },
       uiMessage: "Final guess: Paris, France (confidence 0.82)."
     })
+  ].join("\n");
+}
+
+function perceptionPrepassSection(perception?: PerceptionPrepass): string {
+  if (!perception) {
+    return "";
+  }
+  if (!perception.ok && !perception.ocrError && !perception.plateError) {
+    return [
+      "Perception pre-pass: unavailable this turn" + (perception.note ? ` (${perception.note})` : "") + ".",
+      ""
+    ].join("\n");
+  }
+  const ocr = perception.ocrError
+    ? `unavailable (${perception.ocrError})`
+    : perception.ocrTexts.length
+    ? JSON.stringify(perception.ocrTexts)
+    : "none — the OCR reader found no legible text in this frame";
+  const plates = perception.plateError
+    ? `unavailable (${perception.plateError})`
+    : perception.plates.length
+    ? JSON.stringify(perception.plates)
+    : "none — the plate reader detected no readable plate in this frame";
+  const completedTools = [
+    perception.ocrError ? undefined : "ocr_read_text",
+    perception.plateError ? undefined : "read_plate"
+  ].filter((tool): tool is string => Boolean(tool));
+  const retryGuidance = perception.ok
+    ? [
+        "Use these results directly as Navigator observations. Do NOT call ocr_read_text or read_plate again this turn —",
+        "a 'none' result is a real negative, not a reason to retry. Only use make_crops/place_lookup if genuinely needed."
+      ]
+    : [
+        "Use successful pre-pass results directly as Navigator observations.",
+        completedTools.length
+          ? `Do NOT call ${completedTools.join(" or ")} again this turn; its 'none' result is a real negative.`
+          : "Unavailable reader results are not negative visual evidence.",
+        "Only call a failed/unavailable reader, make_crops, or place_lookup if genuinely needed."
+      ];
+  return [
+    `Perception pre-pass (OCR + ALPR were already run server-side on this frame in ${perception.elapsedSec ?? "?"}s):`,
+    `- OCR text detections: ${ocr}`,
+    `- License plate detections: ${plates}`,
+    ...retryGuidance,
+    ""
   ].join("\n");
 }
 
