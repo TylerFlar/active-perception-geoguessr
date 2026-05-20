@@ -17,6 +17,7 @@ export interface RuntimeSettings {
   codexModel?: string;
   claudeModel?: string;
   mcpConfig: McpConfigFile;
+  perceptionPrepass: boolean;
 }
 
 export function loadSettings(): RuntimeSettings {
@@ -34,8 +35,17 @@ export function loadSettings(): RuntimeSettings {
     claudeModel: nonEmpty(process.env.CLAUDE_MODEL),
     mcpConfig: parseMcpConfig(process.env.PERCEPTION_MCP_CONFIG, (filePath) =>
       fs.readFileSync(path.resolve(rootDir, filePath), "utf-8")
-    )
+    ),
+    perceptionPrepass: parseBoolean(process.env.PERCEPTION_PREPASS, true)
   };
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed) {
+    return fallback;
+  }
+  return !["0", "false", "off", "no"].includes(trimmed);
 }
 
 function parseProvider(value: string | undefined): RuntimeSettings["provider"] {

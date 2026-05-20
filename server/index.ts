@@ -8,6 +8,7 @@ import { loadSettings } from "./config";
 import { createAgentProvider } from "./providers";
 import { buildNavigatorGeographerPrompt } from "./providers/prompt";
 import { capturePanoramaxSnapshot } from "./panoramaxSnapshot";
+import { runPerceptionPrepass } from "./perceptionPrepass";
 import { appendRunLog, createRunLogger, getRunLogs, subscribeRunLogs } from "./runLogs";
 
 const settings = loadSettings();
@@ -105,11 +106,17 @@ app.post("/api/agent/step", async (request, response) => {
       throw new Error(snapshot.warning || "A Panoramax image snapshot is required for the selected provider.");
     }
 
+    const perception =
+      settings.perceptionPrepass && settings.provider !== "mock" && snapshot.filePath
+        ? await runPerceptionPrepass({ imagePath: snapshot.filePath, rootDir: settings.rootDir, log })
+        : undefined;
+
     const prompt = buildNavigatorGeographerPrompt({
       request: stepRequest,
       snapshotPath: snapshot.filePath,
       snapshotWarning: snapshot.warning,
-      mcpConfig: settings.mcpConfig
+      mcpConfig: settings.mcpConfig,
+      perception
     });
 
     const modelOutput = await provider.run({
