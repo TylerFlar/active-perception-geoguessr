@@ -6,6 +6,32 @@ export function parseAgentOutput(text: string): AgentModelOutput & { rawText?: s
   return { ...output, rawText: text };
 }
 
+export function parseAgentOutputObject(value: unknown): AgentModelOutput & { rawText?: string } {
+  const output = AgentModelOutputSchema.parse(value);
+  return { ...output, rawText: JSON.stringify(value) };
+}
+
+// The Claude CLI puts the schema-conforming object in `structured_output` on the
+// final result event; its `result` field is only a prose chat summary.
+export function extractStructuredOutputFromJsonl(stream: string): unknown {
+  let found: unknown;
+  for (const line of stream.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+    const parsed = tryParseJson(line);
+    if (
+      isRecord(parsed) &&
+      parsed.type === "result" &&
+      parsed.structured_output !== undefined &&
+      parsed.structured_output !== null
+    ) {
+      found = parsed.structured_output;
+    }
+  }
+  return found;
+}
+
 export function parseJsonCandidate(text: string): unknown {
   const trimmed = text.trim();
   if (!trimmed) {
