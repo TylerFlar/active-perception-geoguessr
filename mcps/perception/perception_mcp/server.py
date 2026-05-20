@@ -243,7 +243,7 @@ def _onnx_providers() -> list[str] | None:
         providers = [entry.strip() for entry in requested.split(",") if entry.strip()]
         return providers or None
 
-    for primary in ["CUDAExecutionProvider", "DmlExecutionProvider", "CPUExecutionProvider"]:
+    for primary in ["CUDAExecutionProvider", "DmlExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"]:
         if primary in available:
             providers = [primary]
             if primary != "CPUExecutionProvider" and "CPUExecutionProvider" in available:
