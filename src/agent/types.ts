@@ -1,4 +1,4 @@
-export type PanoAction =
+export type StreetViewAction =
   | {
       type: "pan";
       headingDelta: number;
@@ -28,24 +28,21 @@ export type PanoAction =
       reason: string;
     };
 
-export interface PanoLinkState {
+export interface StreetViewMoveTarget {
   index: number;
-  heading: number;
+  screenX: number;
+  screenY: number;
   description?: string;
-  pano?: string;
-  sequenceId?: string;
+  heading?: number;
 }
 
-export interface PanoState {
-  panoId?: string;
-  sequenceId?: string;
-  source: "panoramax";
-  lat: number;
-  lng: number;
+export interface StreetViewState {
+  source: "google_maps";
+  sessionId?: string;
   heading: number;
   pitch: number;
   zoom: number;
-  links: PanoLinkState[];
+  moves: StreetViewMoveTarget[];
 }
 
 export interface PerceptionCallSummary {
@@ -70,12 +67,12 @@ export interface AgentTurn {
   index: number;
   createdAt: string;
   status: "continue" | "final" | "error";
-  pano: PanoState;
+  view: StreetViewState;
   snapshotUrl?: string;
   navigator: {
     observation: string;
     perceptionCalls: PerceptionCallSummary[];
-    action: PanoAction;
+    action: StreetViewAction;
   };
   geographer: {
     hypotheses: GeoHypothesis[];
@@ -87,12 +84,11 @@ export interface AgentTurn {
 }
 
 export interface AgentStepRequest {
-  pano: PanoState;
+  view: StreetViewState;
   history: AgentTurn[];
   runGoal?: string;
   runId?: string;
   maxTurns?: number;
-  snapshotDataUrl?: string;
 }
 
 export interface AgentStepResponse {

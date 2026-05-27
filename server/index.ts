@@ -2,17 +2,28 @@ import express from "express";
 import path from "node:path";
 import { nanoid } from "nanoid";
 import { createServer as createViteServer } from "vite";
-import type { AgentStepRequest, AgentStepResponse, AgentTurn, PanoLinkState, PanoState } from "../src/agent/types";
+import type {
+  AgentStepRequest,
+  AgentStepResponse,
+  AgentTurn,
+  StreetViewAction,
+  StreetViewMoveTarget,
+  StreetViewState
+} from "../src/agent/types";
 import { DEFAULT_PERCEPTION_TOOLS } from "../src/mcp/perceptionContracts";
 import { loadSettings } from "./config";
+import { GoogleMapsController } from "./googleMapsController";
 import { createAgentProvider } from "./providers";
 import { buildNavigatorGeographerPrompt } from "./providers/prompt";
-import { capturePanoramaxSnapshot } from "./panoramaxSnapshot";
 import { runPerceptionPrepass } from "./perceptionPrepass";
 import { appendRunLog, createRunLogger, getRunLogs, subscribeRunLogs } from "./runLogs";
 
 const settings = loadSettings();
 const provider = createAgentProvider(settings);
+const googleMaps = new GoogleMapsController({
+  rootDir: settings.rootDir,
+  startUrl: settings.googleMapsStartUrl
+});
 const app = express();
 
 app.use(express.json({ limit: "8mb" }));
@@ -28,7 +39,7 @@ app.get("/api/health", (_request, response) => {
 
 app.get("/api/config", (_request, response) => {
   response.json({
-    panoramaxEndpoint: settings.panoramaxEndpoint,
+    googleMapsStartUrl: settings.googleMapsStartUrl,
     provider: settings.provider,
     providerModel: provider.model,
     mcpServers: Object.keys(settings.mcpConfig.mcpServers),
@@ -36,34 +47,22 @@ app.get("/api/config", (_request, response) => {
   });
 });
 
-app.get("/api/panoramax/image", async (request, response) => {
-  const url = typeof request.query.url === "string" ? request.query.url : "";
-  const upstreamUrl = parseAllowedPanoramaxUrl(url);
-  if (!upstreamUrl) {
-    response.status(400).send("Invalid Panoramax image URL.");
-    return;
-  }
+app.get("/api/maps/status", async (_request, response) => {
+  response.json(await googleMaps.status());
+});
 
-  try {
-    const upstream = await fetch(upstreamUrl);
-    if (!upstream.ok) {
-      response.status(upstream.status).send(`Panoramax image fetch failed with ${upstream.status}.`);
-      return;
-    }
+app.post("/api/maps/open", async (request, response) => {
+  const url = isRecord(request.body) && typeof request.body.url === "string" ? request.body.url : undefined;
+  response.json(await googleMaps.open(url));
+});
 
-    const contentType = upstream.headers.get("content-type") || "application/octet-stream";
-    if (!contentType.includes("image")) {
-      response.status(415).send("Panoramax URL did not return an image.");
-      return;
-    }
+app.post("/api/maps/snapshot", async (_request, response) => {
+  response.json(await googleMaps.capture(settings.snapshotDir));
+});
 
-    response.setHeader("content-type", contentType);
-    response.setHeader("cache-control", "public, max-age=86400");
-    response.send(Buffer.from(await upstream.arrayBuffer()));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    response.status(502).send(`Panoramax image proxy failed: ${message}`);
-  }
+app.post("/api/maps/action", async (request, response) => {
+  const action = normalizeStreetViewAction(isRecord(request.body) && "action" in request.body ? request.body.action : request.body);
+  response.json(await googleMaps.applyAction(action));
 });
 
 app.get("/api/runs/:runId/logs", (request, response) => {
@@ -90,12 +89,11 @@ app.post("/api/agent/step", async (request, response) => {
   const runId = stepRequest.runId || nanoid();
   const log = createRunLogger(runId);
   log({ source: "server", level: "info", message: `Starting turn ${stepRequest.history.length + 1}` });
-  const snapshot = await capturePanoramaxSnapshot({
-    snapshotDir: settings.snapshotDir,
-    snapshotDataUrl: stepRequest.snapshotDataUrl
-  });
+
+  const snapshot = await googleMaps.capture(settings.snapshotDir);
+  stepRequest.view = snapshot.state;
   if (snapshot.filePath) {
-    log({ source: "server", level: "info", message: "Captured Panoramax snapshot", detail: { path: snapshot.filePath } });
+    log({ source: "server", level: "info", message: "Captured Google Maps screenshot", detail: { path: snapshot.filePath } });
   }
   if (snapshot.warning) {
     log({ source: "server", level: "warn", message: snapshot.warning });
@@ -103,7 +101,7 @@ app.post("/api/agent/step", async (request, response) => {
 
   try {
     if (settings.provider !== "mock" && !snapshot.filePath) {
-      throw new Error(snapshot.warning || "A Panoramax image snapshot is required for the selected provider.");
+      throw new Error(snapshot.warning || "A Google Maps Street View screenshot is required for the selected provider.");
     }
 
     const perception =
@@ -132,6 +130,22 @@ app.post("/api/agent/step", async (request, response) => {
       ...modelOutput,
       snapshotUrl: snapshot.publicUrl
     });
+
+    if (turn.status === "continue") {
+      try {
+        await googleMaps.applyAction(turn.navigator.action);
+        log({
+          source: "server",
+          level: "info",
+          message: `Applied Google Maps action: ${turn.navigator.action.type}`,
+          detail: turn.navigator.action
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        log({ source: "server", level: "warn", message: `Google Maps action was not applied: ${message}` });
+      }
+    }
+
     const payload: AgentStepResponse = {
       turn,
       provider: provider.name,
@@ -179,7 +193,7 @@ function buildTurn(
     index,
     createdAt: new Date().toISOString(),
     status: modelOutput.status,
-    pano: request.pano,
+    view: request.view,
     snapshotUrl: modelOutput.snapshotUrl,
     navigator: modelOutput.navigator,
     geographer: modelOutput.geographer,
@@ -194,7 +208,7 @@ function buildErrorTurn(request: AgentStepRequest, snapshotUrl: string | undefin
     index: request.history.length + 1,
     createdAt: new Date().toISOString(),
     status: "error",
-    pano: request.pano,
+    view: request.view,
     snapshotUrl,
     navigator: {
       observation: `Provider error: ${message}`,
@@ -217,63 +231,105 @@ function normalizeStepRequest(value: unknown): AgentStepRequest {
     throw new Error("Request body must be an object.");
   }
   return {
-    pano: normalizePanoState(value.pano),
+    view: normalizeStreetViewState(value.view),
     history: Array.isArray(value.history) ? (value.history as AgentTurn[]) : [],
     runGoal: typeof value.runGoal === "string" ? value.runGoal : undefined,
     runId: typeof value.runId === "string" ? value.runId : undefined,
-    maxTurns: typeof value.maxTurns === "number" ? value.maxTurns : undefined,
-    snapshotDataUrl: typeof value.snapshotDataUrl === "string" ? value.snapshotDataUrl : undefined
+    maxTurns: typeof value.maxTurns === "number" ? value.maxTurns : undefined
   };
 }
 
-function normalizePanoState(value: unknown): PanoState {
+function normalizeStreetViewState(value: unknown): StreetViewState {
   if (!isRecord(value)) {
-    throw new Error("pano must be an object.");
+    return defaultStreetViewState();
   }
   return {
-    panoId: typeof value.panoId === "string" ? value.panoId : undefined,
-    sequenceId: typeof value.sequenceId === "string" ? value.sequenceId : undefined,
-    source: "panoramax",
-    lat: numberValue(value.lat, "pano.lat"),
-    lng: numberValue(value.lng, "pano.lng"),
-    heading: numberValue(value.heading, "pano.heading"),
-    pitch: numberValue(value.pitch, "pano.pitch"),
-    zoom: numberValue(value.zoom, "pano.zoom"),
-    links: Array.isArray(value.links) ? value.links.map(normalizeLinkState) : []
+    source: "google_maps",
+    sessionId: typeof value.sessionId === "string" ? value.sessionId : undefined,
+    heading: numberOr(value.heading, 0),
+    pitch: numberOr(value.pitch, 0),
+    zoom: numberOr(value.zoom, 1),
+    moves: Array.isArray(value.moves) ? value.moves.map(normalizeMoveTarget) : []
   };
 }
 
-function normalizeLinkState(value: unknown, index: number): PanoLinkState {
+function defaultStreetViewState(): StreetViewState {
+  return {
+    source: "google_maps",
+    heading: 0,
+    pitch: 0,
+    zoom: 1,
+    moves: []
+  };
+}
+
+function normalizeMoveTarget(value: unknown, index: number): StreetViewMoveTarget {
   if (!isRecord(value)) {
-    return { index, heading: 0 };
+    return { index, screenX: 0.5, screenY: 0.66 };
   }
   return {
     index: typeof value.index === "number" ? value.index : index,
-    heading: typeof value.heading === "number" ? value.heading : 0,
+    screenX: numberOr(value.screenX, 0.5),
+    screenY: numberOr(value.screenY, 0.66),
     description: typeof value.description === "string" ? value.description : undefined,
-    pano: typeof value.pano === "string" ? value.pano : undefined,
-    sequenceId: typeof value.sequenceId === "string" ? value.sequenceId : undefined
+    heading: typeof value.heading === "number" ? value.heading : undefined
   };
 }
 
-function numberValue(value: unknown, label: string): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+function normalizeStreetViewAction(value: unknown): StreetViewAction {
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return { type: "hold", reason: "No valid Google Maps action was provided." };
   }
-  throw new Error(`${label} must be a finite number.`);
+
+  if (value.type === "pan") {
+    return {
+      type: "pan",
+      headingDelta: numberOr(value.headingDelta, 0),
+      pitchDelta: typeof value.pitchDelta === "number" ? value.pitchDelta : undefined,
+      reason: stringOr(value.reason, "Pan Google Maps Street View.")
+    };
+  }
+  if (value.type === "zoom") {
+    return {
+      type: "zoom",
+      zoomDelta: numberOr(value.zoomDelta, 0),
+      reason: stringOr(value.reason, "Zoom Google Maps Street View.")
+    };
+  }
+  if (value.type === "move") {
+    return {
+      type: "move",
+      linkIndex: Math.max(0, Math.trunc(numberOr(value.linkIndex, 0))),
+      reason: stringOr(value.reason, "Move to the selected Google Maps Street View target.")
+    };
+  }
+  if (value.type === "inspect") {
+    return {
+      type: "inspect",
+      target: inspectTarget(value.target),
+      heading: typeof value.heading === "number" ? value.heading : undefined,
+      pitch: typeof value.pitch === "number" ? value.pitch : undefined,
+      zoom: typeof value.zoom === "number" ? value.zoom : undefined,
+      reason: stringOr(value.reason, "Inspect a visual target in Google Maps Street View.")
+    };
+  }
+  return {
+    type: "hold",
+    reason: stringOr(value.reason, "No Google Maps movement requested.")
+  };
 }
 
-function parseAllowedPanoramaxUrl(value: string): string | undefined {
-  try {
-    const url = new URL(value);
-    const allowed = new URL(settings.panoramaxEndpoint);
-    if ((url.protocol !== "https:" && url.protocol !== "http:") || url.origin !== allowed.origin) {
-      return undefined;
-    }
-    return url.toString();
-  } catch {
-    return undefined;
-  }
+function inspectTarget(value: unknown): Extract<StreetViewAction, { type: "inspect" }>["target"] {
+  const allowed = ["sign", "plate", "road", "vegetation", "architecture", "utility", "sky", "other"] as const;
+  return allowed.find((target) => target === value) ?? "other";
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

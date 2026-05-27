@@ -3,14 +3,12 @@ import type { AgentStepRequest } from "../../src/agent/types";
 import { buildNavigatorGeographerPrompt } from "./prompt";
 
 const request: AgentStepRequest = {
-  pano: {
-    source: "panoramax",
-    lat: 1,
-    lng: 2,
+  view: {
+    source: "google_maps",
     heading: 0,
     pitch: 0,
     zoom: 0,
-    links: []
+    moves: []
   },
   history: []
 };

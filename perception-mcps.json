@@ -18,6 +18,21 @@
         "ACTIVE_GEO_OCR_MAX_SIDE": "2400"
       },
       "tool_timeout_sec": 90
+    },
+    "google-maps": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "mcps/google_maps",
+        "run",
+        "python",
+        "-m",
+        "google_maps_mcp"
+      ],
+      "env": {
+        "ACTIVE_GEO_SERVER_URL": "http://127.0.0.1:5173"
+      },
+      "tool_timeout_sec": 90
     }
   }
 }
