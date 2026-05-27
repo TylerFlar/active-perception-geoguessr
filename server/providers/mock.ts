@@ -6,7 +6,7 @@ export class MockProvider implements AgentProvider {
 
   async run(input: ProviderRunInput) {
     const turnCount = input.request.history.length;
-    const hasLinks = input.request.pano.links.length > 0;
+    const hasMoveTargets = input.request.view.moves.length > 0;
 
     if (turnCount >= 2) {
       return {
@@ -55,8 +55,8 @@ export class MockProvider implements AgentProvider {
             confidence: input.snapshotPath ? 0.9 : 0.2
           }
         ],
-        action: hasLinks && turnCount === 1
-          ? { type: "move" as const, linkIndex: 0, reason: "Verify that a navigator move action advances the panorama." }
+        action: hasMoveTargets && turnCount === 1
+          ? { type: "move" as const, linkIndex: 0, reason: "Verify that a navigator move action clicks a Google Maps target." }
           : { type: "pan" as const, headingDelta: 90, pitchDelta: 0, reason: "Verify that a navigator pan action updates the camera." }
       },
       geographer: {

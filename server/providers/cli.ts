@@ -382,7 +382,7 @@ function promptWithImagePath(prompt: string, snapshotPath?: string): string {
     prompt,
     "",
     "Image handoff:",
-    `- The current Panoramax street-level image is attached when the CLI supports image attachments.`,
+    "- The current masked Google Maps Street View frame is attached when the CLI supports image attachments.",
     `- The same snapshot is also available on disk at: ${snapshotPath}`,
     "- If a perception MCP/tool needs an image file, pass it that local path."
   ].join("\n");

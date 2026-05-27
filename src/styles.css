@@ -100,7 +100,7 @@ input {
 }
 
 .titleBlock,
-.locationControls,
+.mapControls,
 .runControls {
   display: flex;
   align-items: center;
@@ -133,33 +133,23 @@ input {
   grid-template-columns: minmax(0, 1fr) 340px;
 }
 
-.panoPane {
+.capturePane {
   position: relative;
   min-width: 0;
   min-height: calc(100vh - 61px);
-  background: #dfe3e5;
-  touch-action: none;
-  cursor: grab;
-}
-
-.panoPane:active {
-  cursor: grabbing;
-}
-
-.panoramaViewer {
-  position: absolute;
-  inset: 0;
-  background-color: #111;
+  background: #15191b;
   overflow: hidden;
 }
 
-.panoramaCanvas {
+.captureImage {
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: contain;
+  background: #15191b;
 }
 
-.panoHud {
+.captureHud {
   position: absolute;
   left: 12px;
   bottom: 12px;
@@ -169,7 +159,7 @@ input {
   pointer-events: none;
 }
 
-.panoHud span {
+.captureHud span {
   min-height: 30px;
   padding: 5px 9px;
   display: inline-flex;
@@ -358,7 +348,7 @@ input {
     grid-template-columns: 1fr;
   }
 
-  .locationControls,
+  .mapControls,
   .runControls {
     flex-wrap: wrap;
   }
@@ -373,7 +363,7 @@ input {
     grid-template-rows: minmax(420px, 62vh) minmax(320px, 1fr);
   }
 
-  .panoPane {
+  .capturePane {
     min-height: 420px;
   }
 

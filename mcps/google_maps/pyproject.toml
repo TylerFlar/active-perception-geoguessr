@@ -1,0 +1,15 @@
+[project]
+name = "active-geo-google-maps-mcp"
+version = "0.1.0"
+description = "Local Google Maps browser-control MCP tools for active street-level geolocation."
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "mcp>=1.5.0",
+]
+
+[tool.uv]
+package = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["google_maps_mcp"]
