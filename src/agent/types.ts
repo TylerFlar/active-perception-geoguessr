@@ -45,11 +45,55 @@ export interface StreetViewState {
   moves: StreetViewMoveTarget[];
 }
 
-export interface PerceptionCallSummary {
+export interface SurveyStepSummary {
   tool: string;
   purpose: string;
   resultSummary: string;
   confidence: number;
+}
+
+export interface ExplorationFrame {
+  id: string;
+  label: string;
+  publicUrl?: string;
+  heading: number;
+  pitch: number;
+  zoom: number;
+}
+
+export interface ExplorationGraphNode {
+  id: string;
+  label: string;
+  turnIndex: number;
+  publicUrl?: string;
+  arrivedVia?: string;
+  frames: ExplorationFrame[];
+}
+
+export interface ExplorationGraphEdge {
+  from: string;
+  to: string;
+  action: string;
+}
+
+export type ExplorationEvidenceSource = "visual" | "web" | "inferred";
+
+export interface ExplorationEvidence {
+  id: string;
+  turnIndex: number;
+  nodeId?: string;
+  frameId?: string;
+  type: "text" | "road" | "place" | "environment" | "uncertainty" | "summary";
+  source: ExplorationEvidenceSource;
+  text: string;
+  confidence: number;
+}
+
+export interface ExplorationGraphSummary {
+  nodes: ExplorationGraphNode[];
+  edges: ExplorationGraphEdge[];
+  evidence: ExplorationEvidence[];
+  currentNodeId?: string;
 }
 
 export interface GeoHypothesis {
@@ -62,6 +106,13 @@ export interface GeoHypothesis {
   evidence: string[];
 }
 
+export interface VerifierReview {
+  decision: "accept" | "revise" | "continue";
+  reasoning: string;
+  concerns: string[];
+  finalGuess?: GeoHypothesis;
+}
+
 export interface AgentTurn {
   id: string;
   index: number;
@@ -71,14 +122,20 @@ export interface AgentTurn {
   snapshotUrl?: string;
   navigator: {
     observation: string;
-    perceptionCalls: PerceptionCallSummary[];
-    action: StreetViewAction;
+    visibleText: string[];
+    roadClues: string[];
+    placeClues: string[];
+    environmentClues: string[];
+    uncertainty: string[];
+    surveySteps: SurveyStepSummary[];
   };
   geographer: {
     hypotheses: GeoHypothesis[];
     instructionToNavigator?: string;
     finalGuess?: GeoHypothesis;
   };
+  verifier?: VerifierReview;
+  explorationGraph?: ExplorationGraphSummary;
   uiMessage: string;
   rawText?: string;
 }

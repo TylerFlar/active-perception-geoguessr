@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import {
   buildClaudeMcpConfig,
   buildCodexMcpArgs
-} from "../../src/mcp/perceptionContracts";
+} from "../../src/mcp/mcpConfig";
 import { agentOutputJsonSchema } from "./schema";
 import type { AgentProvider, ProviderRunInput } from "./provider";
 import {
@@ -26,7 +26,8 @@ export class CodexCliProvider implements AgentProvider {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "active-geo-codex-"));
     const schemaPath = path.join(tempDir, "schema.json");
     await fs.writeFile(schemaPath, JSON.stringify(agentOutputJsonSchema), "utf-8");
-    const prompt = promptWithImagePath(input.prompt, input.snapshotPath);
+    const imagePaths = providerImagePaths(input);
+    const prompt = promptWithImagePaths(input.prompt, imagePaths);
 
     const args = [
       "exec",
@@ -41,18 +42,18 @@ export class CodexCliProvider implements AgentProvider {
     if (input.settings.codexModel) {
       args.push("--model", input.settings.codexModel);
     }
-    if (input.snapshotPath) {
-      args.push("--image", input.snapshotPath);
+    for (const imagePath of imagePaths) {
+      args.push("--image", imagePath);
     }
     args.push("--output-schema", schemaPath, "-");
 
     try {
-      input.log?.({ source: "provider", level: "info", message: "Starting Codex CLI" });
+      input.log?.({ source: "provider", level: "info", message: roleMessage("Starting Codex CLI", input.agentRole) });
       const result = await runProcess("codex", args, prompt, process.env, "codex", input.log);
       if (result.exitCode !== 0) {
         throw new Error(`codex exited ${result.exitCode}: ${result.stderr || result.stdout}`);
       }
-      input.log?.({ source: "provider", level: "info", message: "Codex CLI completed" });
+      input.log?.({ source: "provider", level: "info", message: roleMessage("Codex CLI completed", input.agentRole) });
       return parseAgentOutput(extractResultTextFromJsonl(result.stdout));
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -68,7 +69,7 @@ export class ClaudeCliProvider implements AgentProvider {
   }
 
   async run(input: ProviderRunInput) {
-    const prompt = promptWithImagePath(input.prompt, input.snapshotPath);
+    const prompt = promptWithImagePaths(input.prompt, providerImagePaths(input));
     const args = [
       "--print",
       "--verbose",
@@ -95,12 +96,12 @@ export class ClaudeCliProvider implements AgentProvider {
       MCP_TIMEOUT: "86400000",
       MCP_TOOL_TIMEOUT: "100000000"
     };
-    input.log?.({ source: "provider", level: "info", message: "Starting Claude CLI" });
+    input.log?.({ source: "provider", level: "info", message: roleMessage("Starting Claude CLI", input.agentRole) });
     const result = await runProcess("claude", args, undefined, env, "claude", input.log);
     if (result.exitCode !== 0) {
       throw new Error(`claude exited ${result.exitCode}: ${result.stderr || result.stdout}`);
     }
-    input.log?.({ source: "provider", level: "info", message: "Claude CLI completed" });
+    input.log?.({ source: "provider", level: "info", message: roleMessage("Claude CLI completed", input.agentRole) });
     const structured = extractStructuredOutputFromJsonl(result.stdout);
     if (structured !== undefined) {
       return parseAgentOutputObject(structured);
@@ -374,16 +375,24 @@ function trimLog(value: string): string {
   return value.length > 500 ? `${value.slice(0, 497)}...` : value;
 }
 
-function promptWithImagePath(prompt: string, snapshotPath?: string): string {
-  if (!snapshotPath) {
+function providerImagePaths(input: ProviderRunInput): string[] {
+  return [...new Set([...(input.snapshotPaths ?? []), input.snapshotPath].filter((entry): entry is string => Boolean(entry)))];
+}
+
+function promptWithImagePaths(prompt: string, imagePaths: string[]): string {
+  if (!imagePaths.length) {
     return prompt;
   }
   return [
     prompt,
     "",
     "Image handoff:",
-    "- The current masked Google Maps Street View frame is attached when the CLI supports image attachments.",
-    `- The same snapshot is also available on disk at: ${snapshotPath}`,
-    "- If a perception MCP/tool needs an image file, pass it that local path."
+    `- ${imagePaths.length} masked Google Maps Street View frame(s) are attached when the CLI supports image attachments.`,
+    "- The same snapshot files are available on disk in this order:",
+    ...imagePaths.map((imagePath, index) => `  ${index + 1}. ${imagePath}`)
   ].join("\n");
+}
+
+function roleMessage(message: string, role?: ProviderRunInput["agentRole"]): string {
+  return role ? `${message} (${role})` : message;
 }

@@ -21,19 +21,12 @@ describe("agent output schema", () => {
       status: "continue",
       navigator: {
         observation: "Looking at a road.",
-        perceptionCalls: [],
-        action: {
-          type: "pan",
-          headingDelta: 45,
-          pitchDelta: null,
-          zoomDelta: null,
-          linkIndex: null,
-          target: null,
-          heading: null,
-          pitch: null,
-          zoom: null,
-          reason: "Check the next heading."
-        }
+        visibleText: [],
+        roadClues: [],
+        placeClues: [],
+        environmentClues: [],
+        uncertainty: [],
+        surveySteps: []
       },
       geographer: {
         hypotheses: [
@@ -58,32 +51,45 @@ describe("agent output schema", () => {
           evidence: []
         }
       },
+      verifier: {
+        decision: "continue",
+        reasoning: "No final guess is present to verify.",
+        concerns: ["The place evidence is blank."],
+        finalGuess: {
+          country: null,
+          region: null,
+          city: null,
+          lat: null,
+          lng: null,
+          confidence: 0,
+          evidence: []
+        }
+      },
       uiMessage: "Continue."
     });
 
-    expect(parsed.navigator.action.type).toBe("pan");
     expect(parsed.geographer.hypotheses[0].country).toBeUndefined();
     expect(parsed.geographer.finalGuess).toBeUndefined();
   });
 
-  it("coerces null headingDelta/zoomDelta on pan and zoom actions", () => {
-    const panParsed = AgentModelOutputSchema.parse({
+  it("parses navigator survey output without transport actions", () => {
+    const parsed = AgentModelOutputSchema.parse({
       status: "continue",
       navigator: {
-        observation: "Model returned a pan but did not specify a heading delta.",
-        perceptionCalls: [],
-        action: {
-          type: "pan",
-          headingDelta: null,
-          pitchDelta: null,
-          zoomDelta: null,
-          linkIndex: null,
-          target: null,
-          heading: null,
-          pitch: null,
-          zoom: null,
-          reason: "Try a small pan."
-        }
+        observation: "Navigator surveyed signs and road markings.",
+        visibleText: ["Possible Main St sign"],
+        roadClues: ["Two-lane suburban road"],
+        placeClues: [],
+        environmentClues: ["Palm trees"],
+        uncertainty: ["Street sign is partially occluded"],
+        surveySteps: [
+          {
+            tool: "google_maps_move",
+            purpose: "Move to a new Street View node.",
+            resultSummary: "Advanced to the next link target on the current road.",
+            confidence: 0.7
+          }
+        ]
       },
       geographer: {
         hypotheses: [],
@@ -98,32 +104,10 @@ describe("agent output schema", () => {
           evidence: []
         }
       },
-      uiMessage: "Continue."
-    });
-
-    expect(panParsed.navigator.action).toMatchObject({ type: "pan", headingDelta: 0 });
-
-    const zoomParsed = AgentModelOutputSchema.parse({
-      status: "continue",
-      navigator: {
-        observation: "Model returned a zoom but did not specify a delta.",
-        perceptionCalls: [],
-        action: {
-          type: "zoom",
-          headingDelta: null,
-          pitchDelta: null,
-          zoomDelta: null,
-          linkIndex: null,
-          target: null,
-          heading: null,
-          pitch: null,
-          zoom: null,
-          reason: "Try zooming."
-        }
-      },
-      geographer: {
-        hypotheses: [],
-        instructionToNavigator: null,
+      verifier: {
+        decision: "continue",
+        reasoning: "No final guess is present to verify.",
+        concerns: ["The place evidence is blank."],
         finalGuess: {
           country: null,
           region: null,
@@ -137,7 +121,7 @@ describe("agent output schema", () => {
       uiMessage: "Continue."
     });
 
-    expect(zoomParsed.navigator.action).toMatchObject({ type: "zoom", zoomDelta: 0 });
+    expect(parsed.navigator.surveySteps[0].tool).toBe("google_maps_move");
   });
 });
 

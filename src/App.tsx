@@ -320,8 +320,20 @@ function formatLogDetail(detail: unknown): string {
 }
 
 function TurnView({ turn }: { turn: AgentTurn }) {
-  const action = turn.navigator.action;
   const hypothesis = turn.geographer.finalGuess ?? turn.geographer.hypotheses[0];
+  const graphFrames = turn.explorationGraph?.nodes
+    .slice(-3)
+    .flatMap((node) =>
+      node.frames
+        .filter((frame) => frame.publicUrl)
+        .map((frame) => ({
+          id: `${node.id}-${frame.id}`,
+          src: frame.publicUrl,
+          title: `${node.label}: ${frame.label} (${Math.round(frame.heading)} deg / z${Math.round(frame.zoom * 10) / 10})`
+        }))
+    )
+    .slice(-8) ?? [];
+  const graphEvidence = turn.explorationGraph?.evidence.slice(-5) ?? [];
   return (
     <article className={`turnItem ${turn.status}`}>
       <div className="turnHeader">
@@ -329,7 +341,21 @@ function TurnView({ turn }: { turn: AgentTurn }) {
         <span>{turn.status}</span>
       </div>
       <p>{turn.navigator.observation}</p>
-      <div className="actionLine">{action.type}: {action.reason}</div>
+      {graphFrames.length ? (
+        <div className="graphStrip" aria-label="Recent explored frames">
+          {graphFrames.map((frame) => (
+            <img key={frame.id} src={frame.src} title={frame.title} alt="" />
+          ))}
+        </div>
+      ) : null}
+      {graphEvidence.length ? (
+        <div className="evidenceLine">
+          {graphEvidence.map((entry) => `${entry.type}: ${entry.text}`).join(" | ")}
+        </div>
+      ) : null}
+      {turn.verifier ? (
+        <div className="verifierLine">verify {turn.verifier.decision}: {turn.verifier.reasoning}</div>
+      ) : null}
       {hypothesis ? <div className="hypothesisLine">{formatGuess(hypothesis)}</div> : null}
     </article>
   );

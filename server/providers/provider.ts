@@ -3,12 +3,16 @@ import type { RuntimeSettings } from "../config";
 import type { RunLogger } from "../runLogs";
 import type { AgentModelOutput } from "./schema";
 
+export type AgentRole = "navigator" | "geographer" | "verifier";
+
 export interface ProviderRunInput {
   prompt: string;
   request: AgentStepRequest;
   snapshotPath?: string;
+  snapshotPaths?: string[];
   settings: RuntimeSettings;
   log?: RunLogger;
+  agentRole?: AgentRole;
 }
 
 export interface AgentProvider {
