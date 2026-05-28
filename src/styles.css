@@ -330,7 +330,24 @@ input {
   font-size: 0.9rem;
 }
 
-.actionLine,
+.graphStrip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin: 8px 0;
+}
+
+.graphStrip img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  object-fit: cover;
+  background: #15191b;
+}
+
+.verifierLine,
+.evidenceLine,
 .hypothesisLine,
 .emptyState {
   color: var(--muted);
@@ -339,8 +356,14 @@ input {
   overflow-wrap: anywhere;
 }
 
-.actionLine {
-  color: var(--accent-strong);
+.verifierLine {
+  margin-top: 5px;
+}
+
+.evidenceLine {
+  margin: 5px 0;
+  max-height: 3.7em;
+  overflow: hidden;
 }
 
 @media (max-width: 900px) {

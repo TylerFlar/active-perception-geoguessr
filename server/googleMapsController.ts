@@ -323,8 +323,14 @@ async function wheelZoom(page: Page, viewport: ViewportSize, zoomDelta: number):
 
 async function clickMoveTarget(page: Page, viewport: ViewportSize, linkIndex: number): Promise<void> {
   const target = moveTargets(viewport)[linkIndex] ?? moveTargets(viewport)[0];
-  await page.mouse.click(target.screenX * viewport.width, target.screenY * viewport.height);
-  await page.waitForTimeout(MIN_ACTION_SETTLE_MS);
+  const beforeKey = physicalStreetViewUrlKey(page.url());
+  for (const point of moveClickCandidates(target, viewport)) {
+    await page.mouse.click(point.x, point.y);
+    await page.waitForTimeout(MAPS_SETTLE_MS);
+    if (physicalStreetViewUrlKey(page.url()) !== beforeKey) {
+      return;
+    }
+  }
 }
 
 async function inspectTarget(
@@ -348,6 +354,30 @@ function safeCenter(viewport: ViewportSize): { x: number; y: number } {
     x: clamp(Math.max(440, viewport.width * 0.52), 16, viewport.width - 16),
     y: viewport.height * 0.52
   };
+}
+
+function moveClickCandidates(target: StreetViewMoveTarget, viewport: ViewportSize): Array<{ x: number; y: number }> {
+  const baseX = target.screenX * viewport.width;
+  const baseY = target.screenY * viewport.height;
+  const offsets = [
+    { x: 0, y: 0 },
+    { x: 0, y: -viewport.height * 0.08 },
+    { x: 0, y: viewport.height * 0.08 },
+    { x: -viewport.width * 0.04, y: 0 },
+    { x: viewport.width * 0.04, y: 0 }
+  ];
+  return offsets.map((offset) => ({
+    x: clamp(baseX + offset.x, 16, viewport.width - 16),
+    y: clamp(baseY + offset.y, 16, viewport.height - 16)
+  }));
+}
+
+function physicalStreetViewUrlKey(url: string): string {
+  return url
+    .replace(/,-?\d+(?:\.\d+)?h(?=,|\/|\?|$)/g, ",Hh")
+    .replace(/,-?\d+(?:\.\d+)?t(?=,|\/|\?|$)/g, ",Tt")
+    .replace(/,-?\d+(?:\.\d+)?y(?=,|\/|\?|$)/g, ",Yy")
+    .replace(/([?&])(heading|pitch|fov)=[^&]*/g, "$1");
 }
 
 function hudMaskRects(viewport: ViewportSize) {

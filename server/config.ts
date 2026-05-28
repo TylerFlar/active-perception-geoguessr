@@ -1,7 +1,6 @@
-import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
-import { parseMcpConfig, type McpConfigFile } from "../src/mcp/perceptionContracts";
+import { buildGoogleMapsMcpConfig, type McpConfigFile } from "../src/mcp/mcpConfig";
 
 dotenv.config({ quiet: true });
 
@@ -17,17 +16,14 @@ export interface RuntimeSettings {
   codexModel?: string;
   claudeModel?: string;
   mcpConfig: McpConfigFile;
-  perceptionPrepass: boolean;
 }
 
 export function loadSettings(): RuntimeSettings {
   const rootDir = process.cwd();
   const host = process.env.HOST || "127.0.0.1";
   const port = Number(process.env.PORT || 5173);
-  const mcpConfig = parseMcpConfig(process.env.PERCEPTION_MCP_CONFIG, (filePath) =>
-    fs.readFileSync(path.resolve(rootDir, filePath), "utf-8")
-  );
-  injectGoogleMapsServerUrl(mcpConfig, nonEmpty(process.env.ACTIVE_GEO_SERVER_URL) || `http://${host}:${port}`);
+  const serverUrl = nonEmpty(process.env.ACTIVE_GEO_SERVER_URL) || `http://${host}:${port}`;
+  const mcpConfig = buildGoogleMapsMcpConfig(serverUrl);
 
   return {
     host,
@@ -40,29 +36,8 @@ export function loadSettings(): RuntimeSettings {
     openaiModel: nonEmpty(process.env.OPENAI_MODEL),
     codexModel: nonEmpty(process.env.CODEX_MODEL),
     claudeModel: nonEmpty(process.env.CLAUDE_MODEL),
-    mcpConfig,
-    perceptionPrepass: parseBoolean(process.env.PERCEPTION_PREPASS, true)
+    mcpConfig
   };
-}
-
-function injectGoogleMapsServerUrl(config: McpConfigFile, serverUrl: string): void {
-  for (const [name, server] of Object.entries(config.mcpServers)) {
-    const args = server.args?.join(" ") || "";
-    if (name === "google-maps" || args.includes("mcps/google_maps") || args.includes("google_maps_mcp")) {
-      server.env = {
-        ...server.env,
-        ACTIVE_GEO_SERVER_URL: serverUrl
-      };
-    }
-  }
-}
-
-function parseBoolean(value: string | undefined, fallback: boolean): boolean {
-  const trimmed = value?.trim().toLowerCase();
-  if (!trimmed) {
-    return fallback;
-  }
-  return !["0", "false", "off", "no"].includes(trimmed);
 }
 
 function parseProvider(value: string | undefined): RuntimeSettings["provider"] {

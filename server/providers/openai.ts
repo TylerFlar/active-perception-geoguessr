@@ -16,6 +16,11 @@ export class OpenAiProvider implements AgentProvider {
     }
 
     const model = input.settings.openaiModel || "gpt-5.2";
+    input.log?.({
+      source: "provider",
+      level: "info",
+      message: input.agentRole ? `Starting OpenAI response (${input.agentRole})` : "Starting OpenAI response"
+    });
     const content: Array<Record<string, unknown>> = [
       {
         type: "input_text",
@@ -23,8 +28,8 @@ export class OpenAiProvider implements AgentProvider {
       }
     ];
 
-    if (input.snapshotPath) {
-      const image = await fs.readFile(input.snapshotPath);
+    for (const imagePath of providerImagePaths(input)) {
+      const image = await fs.readFile(imagePath);
       content.push({
         type: "input_image",
         image_url: `data:image/jpeg;base64,${image.toString("base64")}`,
@@ -64,8 +69,17 @@ export class OpenAiProvider implements AgentProvider {
     const payload = (await response.json()) as Record<string, unknown>;
     const outputText = extractOpenAiText(payload);
     const parsed = parseAgentOutput(outputText);
+    input.log?.({
+      source: "provider",
+      level: "info",
+      message: input.agentRole ? `OpenAI response completed (${input.agentRole})` : "OpenAI response completed"
+    });
     return AgentModelOutputSchema.parse(parsed);
   }
+}
+
+function providerImagePaths(input: ProviderRunInput): string[] {
+  return [...new Set([...(input.snapshotPaths ?? []), input.snapshotPath].filter((entry): entry is string => Boolean(entry)))];
 }
 
 function extractOpenAiText(payload: Record<string, unknown>): string {

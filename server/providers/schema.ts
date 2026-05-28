@@ -9,24 +9,7 @@ const OptionalLongitudeSchema = z.preprocess(
   (value) => value === null ? undefined : value,
   z.number().min(-180).max(180).optional()
 );
-const OptionalHeadingSchema = z.preprocess(
-  (value) => value === null ? undefined : value,
-  z.number().min(0).max(360).optional()
-);
-const OptionalPitchDeltaSchema = z.preprocess(
-  (value) => value === null ? undefined : value,
-  z.number().min(-45).max(45).optional()
-);
-const OptionalPitchSchema = z.preprocess(
-  (value) => value === null ? undefined : value,
-  z.number().min(-90).max(90).optional()
-);
-const OptionalZoomSchema = z.preprocess(
-  (value) => value === null ? undefined : value,
-  z.number().min(0).max(4).optional()
-);
-
-export const PerceptionCallSchema = z.object({
+export const SurveyStepSchema = z.object({
   tool: z.string().min(1),
   purpose: z.string().min(1),
   resultSummary: z.string().min(1),
@@ -48,66 +31,30 @@ const OptionalGeoHypothesisSchema = z.preprocess(
   GeoHypothesisSchema.optional()
 );
 
-const NullableHeadingDeltaSchema = z.preprocess(
-  (value) => value === null ? 0 : value,
-  z.number().min(-180).max(180)
-);
-const NullableZoomDeltaSchema = z.preprocess(
-  (value) => value === null ? 0 : value,
-  z.number().min(-4).max(4)
-);
-
-const PanActionSchema = z.object({
-  type: z.literal("pan"),
-  headingDelta: NullableHeadingDeltaSchema,
-  pitchDelta: OptionalPitchDeltaSchema,
-  reason: z.string().min(1)
-});
-
-const ZoomActionSchema = z.object({
-  type: z.literal("zoom"),
-  zoomDelta: NullableZoomDeltaSchema,
-  reason: z.string().min(1)
-});
-
-const MoveActionSchema = z.object({
-  type: z.literal("move"),
-  linkIndex: z.number().int().min(0),
-  reason: z.string().min(1)
-});
-
-const InspectActionSchema = z.object({
-  type: z.literal("inspect"),
-  target: z.enum(["sign", "plate", "road", "vegetation", "architecture", "utility", "sky", "other"]),
-  heading: OptionalHeadingSchema,
-  pitch: OptionalPitchSchema,
-  zoom: OptionalZoomSchema,
-  reason: z.string().min(1)
-});
-
-const HoldActionSchema = z.object({
-  type: z.literal("hold"),
-  reason: z.string().min(1)
+export const VerifierReviewSchema = z.object({
+  decision: z.enum(["accept", "revise", "continue"]),
+  reasoning: z.string().min(1),
+  concerns: z.array(z.string()).default([]),
+  finalGuess: OptionalGeoHypothesisSchema
 });
 
 export const AgentModelOutputSchema = z.object({
   status: z.enum(["continue", "final", "error"]),
   navigator: z.object({
     observation: z.string().min(1),
-    perceptionCalls: z.array(PerceptionCallSchema).default([]),
-    action: z.discriminatedUnion("type", [
-      PanActionSchema,
-      ZoomActionSchema,
-      MoveActionSchema,
-      InspectActionSchema,
-      HoldActionSchema
-    ])
+    visibleText: z.array(z.string()).default([]),
+    roadClues: z.array(z.string()).default([]),
+    placeClues: z.array(z.string()).default([]),
+    environmentClues: z.array(z.string()).default([]),
+    uncertainty: z.array(z.string()).default([]),
+    surveySteps: z.array(SurveyStepSchema).default([])
   }),
   geographer: z.object({
     hypotheses: z.array(GeoHypothesisSchema).default([]),
     instructionToNavigator: OptionalStringSchema,
     finalGuess: OptionalGeoHypothesisSchema
   }),
+  verifier: VerifierReviewSchema,
   uiMessage: z.string().min(1)
 });
 
@@ -131,16 +78,29 @@ const geoHypothesisJsonSchema = {
 export const agentOutputJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["status", "navigator", "geographer", "uiMessage"],
+  required: ["status", "navigator", "geographer", "verifier", "uiMessage"],
   properties: {
     status: { type: "string", enum: ["continue", "final", "error"] },
     navigator: {
       type: "object",
       additionalProperties: false,
-      required: ["observation", "perceptionCalls", "action"],
+      required: [
+        "observation",
+        "visibleText",
+        "roadClues",
+        "placeClues",
+        "environmentClues",
+        "uncertainty",
+        "surveySteps"
+      ],
       properties: {
         observation: { type: "string" },
-        perceptionCalls: {
+        visibleText: { type: "array", items: { type: "string" } },
+        roadClues: { type: "array", items: { type: "string" } },
+        placeClues: { type: "array", items: { type: "string" } },
+        environmentClues: { type: "array", items: { type: "string" } },
+        uncertainty: { type: "array", items: { type: "string" } },
+        surveySteps: {
           type: "array",
           items: {
             type: "object",
@@ -153,37 +113,6 @@ export const agentOutputJsonSchema = {
               confidence: { type: "number", minimum: 0, maximum: 1 }
             }
           }
-        },
-        action: {
-          type: "object",
-          additionalProperties: false,
-          required: [
-            "type",
-            "headingDelta",
-            "pitchDelta",
-            "zoomDelta",
-            "linkIndex",
-            "target",
-            "heading",
-            "pitch",
-            "zoom",
-            "reason"
-          ],
-          properties: {
-            type: { type: "string", enum: ["pan", "zoom", "move", "inspect", "hold"] },
-            headingDelta: { type: ["number", "null"], minimum: -180, maximum: 180 },
-            pitchDelta: { type: ["number", "null"], minimum: -45, maximum: 45 },
-            zoomDelta: { type: ["number", "null"], minimum: -4, maximum: 4 },
-            linkIndex: { type: ["integer", "null"], minimum: 0 },
-            target: {
-              type: ["string", "null"],
-              enum: ["sign", "plate", "road", "vegetation", "architecture", "utility", "sky", "other", null]
-            },
-            heading: { type: ["number", "null"], minimum: 0, maximum: 360 },
-            pitch: { type: ["number", "null"], minimum: -90, maximum: 90 },
-            zoom: { type: ["number", "null"], minimum: 0, maximum: 4 },
-            reason: { type: "string" }
-          }
         }
       }
     },
@@ -194,6 +123,17 @@ export const agentOutputJsonSchema = {
       properties: {
         hypotheses: { type: "array", items: geoHypothesisJsonSchema },
         instructionToNavigator: { type: ["string", "null"] },
+        finalGuess: geoHypothesisJsonSchema
+      }
+    },
+    verifier: {
+      type: "object",
+      additionalProperties: false,
+      required: ["decision", "reasoning", "concerns", "finalGuess"],
+      properties: {
+        decision: { type: "string", enum: ["accept", "revise", "continue"] },
+        reasoning: { type: "string" },
+        concerns: { type: "array", items: { type: "string" } },
         finalGuess: geoHypothesisJsonSchema
       }
     },

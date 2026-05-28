@@ -1,178 +1,270 @@
-import type { AgentStepRequest, AgentTurn, StreetViewState } from "../../src/agent/types";
-import { summarizeToolCatalog, type McpConfigFile } from "../../src/mcp/perceptionContracts";
-import type { PerceptionPrepass } from "../perceptionPrepass";
+import type { AgentStepRequest, AgentTurn, ExplorationGraphSummary, StreetViewState } from "../../src/agent/types";
+import type { McpConfigFile } from "../../src/mcp/mcpConfig";
+import type { AgentModelOutput } from "./schema";
 
-export function buildNavigatorGeographerPrompt(params: {
+export interface NavigatorFrame {
+  id: string;
+  label: string;
+  filePath?: string;
+  publicUrl?: string;
+  actionFromPrevious?: string;
+  heading: number;
+  pitch: number;
+  zoom: number;
+}
+
+export function buildNavigatorPrompt(params: {
   request: AgentStepRequest;
   snapshotPath?: string;
   snapshotWarning?: string;
   mcpConfig: McpConfigFile;
-  perception?: PerceptionPrepass;
+  frames?: NavigatorFrame[];
+  explorationGraph?: ExplorationGraphSummary;
 }): string {
   const history = params.request.history.slice(-10).map(historyTurnForPrompt);
   const redactedView = redactedViewForPrompt(params.request.view);
   const mcpServerNames = Object.keys(params.mcpConfig.mcpServers);
+  const instruction = navigatorInstructionFromHistory(params.request.history);
 
   return [
-    "You are running an active visual geolocation loop over a live Google Maps Street View browser window.",
+    "You are the Navigator in an active visual geolocation workflow.",
+    "Your role is to inspect the live Google Maps Street View scene and report direct visual evidence. The Geographer handles location reasoning; your message stays focused on what is visible, what you checked, and what remains uncertain.",
     "",
-    "Roles:",
-    "- Navigator: inspect the current visual frame, use available perception and Google Maps MCP tools when useful, and choose exactly one next camera/navigation action.",
-    "- Geographer: maintain location hypotheses from visual evidence only, then either give a best guess or instruct the Navigator what clue to seek next.",
+    "Navigator behavior:",
+    "Begin with the attached current Street View frame. If it already has useful clues, report them and hold position. When another view would help the city guess, use the Google Maps tools to pan, zoom, inspect, move, or capture a fresh screenshot. Movement is optional and should serve the evidence.",
     "",
-    "Fairness constraints:",
-    "- Do not use hidden coordinates, URLs, Street View IDs, API metadata, file names, EXIF, or server-side browser state as evidence.",
-    "- The screenshot itself, prior observations, visible street-view imagery, and explicit perception-tool outputs are fair evidence.",
-    "- Masked black regions are HUD/copyright/search UI redactions. Treat them as unavailable pixels, not as geolocation evidence.",
-    "- Prefer cautious country/region/city hypotheses over fake precision. Coordinates are optional and should be approximate unless evidence is unusually strong.",
+    "The easiest tool is google_maps_look because it can take one camera or movement action and immediately return the resulting screenshot. The lower-level tools are available when you want finer control. Each captured frame records the current physical node, heading, pitch, and zoom, so the graph can remember where you looked.",
+    "",
+    "Follow Geographer or Verifier instructions when they point to a clue worth checking. Native web search or model tools may be used to check public information from visible clues; keep those search results separate from direct visual facts. Useful evidence includes visible text, road markings, signs, businesses, institutions, road shields, plates, vegetation, architecture, traffic control, and settlement clues.",
+    "",
+    "Evidence boundary:",
+    "Evidence comes from the screenshot, prior observations, visible Street View imagery, explicit Google Maps tool outputs, and public searches grounded in visible clues. Hidden coordinates, URLs, Street View IDs, API metadata, file names, EXIF, and server-side browser state stay outside the evidence set. Masked black regions are unavailable pixels.",
     "",
     "Current camera state, with coordinates and URL intentionally removed:",
     JSON.stringify(redactedView, null, 2),
     "",
     params.snapshotPath
-      ? `The current masked Google Maps frame is attached and also available at this local path for tools that accept image paths: ${params.snapshotPath}`
-      : `No current snapshot file is available. Snapshot warning: ${params.snapshotWarning || "none"}`,
+      ? `Initial masked Google Maps frame: ${params.snapshotPath}`
+      : `Initial snapshot file unavailable. Snapshot warning: ${params.snapshotWarning || "none"}`,
     "",
-    perceptionPrepassSection(params.perception),
-    "Available perception MCP tools:",
-    summarizeToolCatalog(),
-    "",
-    "Available Google Maps MCP tools for CLI providers:",
-    "- google_maps_screenshot: recaptures the current masked Google Maps frame and returns a local image path.",
-    "- google_maps_pan: drags Street View by heading/pitch deltas.",
-    "- google_maps_zoom: zooms the Street View frame in or out.",
-    "- google_maps_move: clicks one of the available screen move targets.",
-    "- google_maps_inspect: pans/zooms toward an inspection target.",
+    framesSection(params.frames),
+    explorationGraphSection(params.explorationGraph),
+    "Available Google Maps MCP tools:",
+    "- google_maps_look: easiest tool. Optionally performs one action, then captures and returns the current masked Street View frame with node id, heading, pitch, and zoom.",
+    "- google_maps_screenshot: captures the current masked Street View frame as image content and records node id, heading, pitch, and zoom.",
+    "- google_maps_pan: changes camera heading/pitch without moving.",
+    "- google_maps_zoom: changes camera zoom without moving.",
+    "- google_maps_inspect: aims the camera at a specific heading/pitch/zoom when you know where you want to look.",
+    "- google_maps_move: physically moves to one available Street View link target by link_index.",
     "- google_maps_status: reports whether the controlled Google Maps window is open without revealing hidden location evidence.",
-    "If you call a google_maps_* control tool during this turn, return navigator.action.type=\"hold\" unless you intentionally want the app to apply an additional action after your JSON.",
     "",
     mcpServerNames.length
-      ? `Injected MCP servers for this run: ${mcpServerNames.join(", ")}.`
-      : "No external MCP servers are injected for this run. Use native visual reasoning and report perceptionCalls as visual inspection summaries.",
+      ? `Injected MCP servers for this navigator call: ${mcpServerNames.join(", ")}.`
+      : "External MCP servers injected for this navigator call: none. Use native visual reasoning only.",
     "",
-    "Recent loop history:",
+    "Instruction from previous reasoning step:",
+    instruction || "Inspect the current scene for the strongest readable and distinctive clues. Move only if it seems useful.",
+    "",
+    "Recent workflow history:",
     history.length ? JSON.stringify(history, null, 2) : "[]",
     "",
-    "Action policy:",
-    "- COMMIT EARLY: your top priority is producing the final JSON output. Never spend more than 3 perception/inspection turns before committing to an answer.",
-    "- If you can identify the country or region from architecture, vegetation, road furniture, signs, plates, or general visual cues alone, that is sufficient. Country/region with moderate confidence is useful; do not chase city-level precision at the cost of producing no answer.",
-    "- Perception MCP tools (ocr_read_text, read_plate, place_lookup, make_crops) are optional aids. If the first OCR/crop attempt returns no useful text, do not retry with different coordinates; fall back to direct visual analysis and commit to a guess based on it.",
-    "- If a small sign, plate, road shield, bollard, utility pole, road marking, distinctive vegetation, or architectural cue is visible, inspect or zoom toward it.",
-    "- If the current frame is weak, pan to another heading before moving.",
-    "- Move only when the selected screen target is likely to expose more signs, intersections, businesses, road shields, or settlement clues.",
-    "- Return status=final when the evidence is strong enough for a useful guess. Useful means country-level confidence >= 0.5, not city-level certainty.",
-    "- For navigator.action, include every action field. Use null only for fields that do not apply to the selected action type.",
-    "- The selected action type determines which fields must be non-null:",
-    "  - type=pan: headingDelta must be a number (use 0 for no horizontal change). pitchDelta is optional.",
-    "  - type=zoom: zoomDelta must be a number.",
-    "  - type=move: linkIndex must be a non-negative integer that matches an available move target.",
-    "  - type=inspect: target must be one of sign, plate, road, vegetation, architecture, utility, sky, other.",
-    "  - type=hold: only reason matters; every other field should be null.",
-    "- If there is no final guess yet, set finalGuess to an object with country/region/city/lat/lng null, confidence 0, and evidence [].",
-    "",
-    "OUTPUT FORMAT - CRITICAL:",
-    "- Your final assistant message MUST be exactly one JSON object that matches the provided schema.",
-    "- The very first character of your final message MUST be `{`. The very last character MUST be `}`.",
-    "- No markdown. No bold. No headings. No bullet lists. No preamble like 'Here is the answer:'. No code fences. No explanation text before or after the JSON.",
-    "- All schema fields are required by the transport. Use null when a value does not apply; do not omit fields.",
-    "- Example of a valid final message (values are illustrative only):",
-    JSON.stringify({
-      status: "final",
-      navigator: {
-        observation: "French Haussmann facade visible on left; Notre-Dame spire in the distance.",
-        perceptionCalls: [],
-        action: {
-          type: "hold",
-          headingDelta: null,
-          pitchDelta: null,
-          zoomDelta: null,
-          linkIndex: null,
-          target: null,
-          heading: null,
-          pitch: null,
-          zoom: null,
-          reason: "Sufficient evidence for final guess."
-        }
-      },
-      geographer: {
-        hypotheses: [
-          {
-            country: "France",
-            region: "Ile-de-France",
-            city: "Paris",
-            lat: 48.8566,
-            lng: 2.3522,
-            confidence: 0.82,
-            evidence: ["French Second Empire architecture", "Notre-Dame spire visible"]
-          }
-        ],
-        instructionToNavigator: null,
-        finalGuess: {
-          country: "France",
-          region: "Ile-de-France",
-          city: "Paris",
-          lat: 48.8566,
-          lng: 2.3522,
-          confidence: 0.82,
-          evidence: ["French Second Empire architecture", "Notre-Dame spire visible"]
-        }
-      },
-      uiMessage: "Final guess: Paris, France (confidence 0.82)."
-    })
+    "Output rules:",
+    "- Return status=continue.",
+    "- Fill navigator.observation with a compact but evidence-rich survey report.",
+    "- Fill visibleText, roadClues, placeClues, environmentClues, and uncertainty as short arrays. Use [] for an empty category.",
+    "- Fill navigator.surveySteps with visual inspection summaries, searches, and any tool action you used.",
+    "- Leave geographer.finalGuess empty and verifier as decision=continue because those roles run separately.",
+    outputFormatRules()
   ].join("\n");
 }
 
-function perceptionPrepassSection(perception?: PerceptionPrepass): string {
-  if (!perception) {
+export function buildGeographerPrompt(params: {
+  request: AgentStepRequest;
+  navigatorOutput: AgentModelOutput;
+  explorationGraph?: ExplorationGraphSummary;
+}): string {
+  const history = params.request.history.slice(-10).map(historyTurnForPrompt);
+
+  return [
+    "You are the Geographer in an active visual geolocation workflow.",
+    "Google Maps tools and image access are unavailable in this role. Reason from the Navigator's survey report and prior workflow messages.",
+    "",
+    "Navigator survey for this turn:",
+    JSON.stringify({
+      observation: params.navigatorOutput.navigator.observation,
+      visibleText: params.navigatorOutput.navigator.visibleText,
+      roadClues: params.navigatorOutput.navigator.roadClues,
+      placeClues: params.navigatorOutput.navigator.placeClues,
+      environmentClues: params.navigatorOutput.navigator.environmentClues,
+      uncertainty: params.navigatorOutput.navigator.uncertainty,
+      surveySteps: params.navigatorOutput.navigator.surveySteps
+    }, null, 2),
+    "",
+    explorationGraphSection(params.explorationGraph),
+    "",
+    "Recent workflow history:",
+    history.length ? JSON.stringify(history, null, 2) : "[]",
+    "",
+    "Geographer behavior:",
+    "Submit the best current result every turn so the Verifier always has a concrete proposal to check. The goal is a useful city or region guess, not a proof. One strong clue or a cluster of weaker clues can be enough; road overlays, business clusters, partial text reads, and search results grounded in visible clues are all usable evidence.",
+    "",
+    "Use confidence and evidence notes to carry uncertainty instead of withholding the answer. If the exact city is unclear, make the best broader region/country guess and lower the confidence. If another observation would help, write that request in instructionToNavigator while still filling hypotheses and finalGuess with the current best result.",
+    "",
+    "Output rules:",
+    "- Return status=final.",
+    "- Copy the Navigator object exactly from the provided survey.",
+    "- Fill hypotheses and finalGuess with the current best answer, evidence, and confidence.",
+    "- Fill instructionToNavigator when one concrete next observation could improve or correct the guess.",
+    "- Leave verifier as decision=continue with a short placeholder because the Verifier role runs separately after your result.",
+    outputFormatRules()
+  ].join("\n");
+}
+
+export function buildVerifierPrompt(params: {
+  request: AgentStepRequest;
+  navigatorOutput: AgentModelOutput;
+  geographerOutput: AgentModelOutput;
+  explorationGraph?: ExplorationGraphSummary;
+}): string {
+  const history = params.request.history.slice(-10).map(historyTurnForPrompt);
+
+  return [
+    "You are the Verifier in an active visual geolocation workflow.",
+    "Google Maps tools and image access are unavailable in this role. Verify from the Navigator's survey and the Geographer's stated reasoning.",
+    "",
+    "Navigator survey:",
+    JSON.stringify({
+      observation: params.navigatorOutput.navigator.observation,
+      visibleText: params.navigatorOutput.navigator.visibleText,
+      roadClues: params.navigatorOutput.navigator.roadClues,
+      placeClues: params.navigatorOutput.navigator.placeClues,
+      environmentClues: params.navigatorOutput.navigator.environmentClues,
+      uncertainty: params.navigatorOutput.navigator.uncertainty,
+      surveySteps: params.navigatorOutput.navigator.surveySteps
+    }, null, 2),
+    "",
+    "Geographer proposal:",
+    JSON.stringify(params.geographerOutput.geographer, null, 2),
+    "",
+    explorationGraphSection(params.explorationGraph),
+    "",
+    "Recent workflow history:",
+    history.length ? JSON.stringify(history, null, 2) : "[]",
+    "",
+    "Verifier behavior:",
+    "Run a soft sanity check on the Geographer's proposal. Accept plausible guesses that are supported by the survey, including guesses based on indirect, search-derived, or imperfect evidence. Revise when the same evidence clearly supports a better final answer. Continue only when the submitted result is effectively unusable, contradicted by the evidence, or one quick observation is very likely to change the city.",
+    "",
+    "Confidence is part of the evidence. Moderate-confidence city-level guesses are still provisional; they should usually become a continue request for one disambiguating clue, or a revision to a broader area, unless the evidence is unusually distinctive.",
+    "",
+    "Movement is optional when the evidence is already strong. Google-rendered road labels, visible business clusters, search-derived business/street relationships, and missing physical cross-street signs are reasons to calibrate confidence rather than reasons to reject a plausible answer. A continue decision should name the single missing clue that would actually change the likely city.",
+    "",
+    "Output rules:",
+    "- Copy the Navigator survey object.",
+    "- Preserve or revise the Geographer fields according to your decision.",
+    "- Fill verifier.decision as accept, revise, or continue with concise concerns.",
+    outputFormatRules()
+  ].join("\n");
+}
+
+function outputFormatRules(): string {
+  return [
+    "",
+    "OUTPUT FORMAT:",
+    "- The final assistant message is exactly one raw JSON object that matches the provided schema.",
+    "- The first character is `{` and the last character is `}`.",
+    "- The response body contains only the JSON object.",
+    "- All schema fields are required by the transport. Use null when a value does not apply.",
+    "- Empty finalGuess values use country/region/city/lat/lng null, confidence 0, and evidence []."
+  ].join("\n");
+}
+
+function framesSection(frames: NavigatorFrame[] | undefined): string {
+  if (!frames?.length) {
     return "";
   }
-  if (!perception.ok && !perception.ocrError && !perception.plateError) {
-    return [
-      "Perception pre-pass: unavailable this turn" + (perception.note ? ` (${perception.note})` : "") + ".",
-      ""
-    ].join("\n");
-  }
-  const ocr = perception.ocrError
-    ? `unavailable (${perception.ocrError})`
-    : perception.ocrTexts.length
-    ? JSON.stringify(perception.ocrTexts)
-    : "none - the OCR reader found no legible text in this frame";
-  const plates = perception.plateError
-    ? `unavailable (${perception.plateError})`
-    : perception.plates.length
-    ? JSON.stringify(perception.plates)
-    : "none - the plate reader detected no readable plate in this frame";
-  const completedTools = [
-    perception.ocrError ? undefined : "ocr_read_text",
-    perception.plateError ? undefined : "read_plate"
-  ].filter((tool): tool is string => Boolean(tool));
-  const retryGuidance = perception.ok
-    ? [
-        "Use these results directly as Navigator observations. Do not call ocr_read_text or read_plate again this turn;",
-        "a 'none' result is a real negative, not a reason to retry. Only use make_crops/place_lookup if genuinely needed."
-      ]
-    : [
-        "Use successful pre-pass results directly as Navigator observations.",
-        completedTools.length
-          ? `Do not call ${completedTools.join(" or ")} again this turn; its 'none' result is a real negative.`
-          : "Unavailable reader results are not negative visual evidence.",
-        "Only call a failed/unavailable reader, make_crops, or place_lookup if genuinely needed."
-      ];
   return [
-    `Perception pre-pass (OCR + ALPR were already run server-side on this frame in ${perception.elapsedSec ?? "?"}s):`,
-    `- OCR text detections: ${ocr}`,
-    `- License plate detections: ${plates}`,
-    ...retryGuidance,
+    "Attached Street View frame(s):",
+    ...frames.map((frame, index) => {
+      const action = frame.actionFromPrevious ? ` after ${frame.actionFromPrevious}` : "";
+      const path = frame.filePath ? ` (${frame.filePath})` : "";
+      const camera = `heading ${round(frame.heading)}, pitch ${round(frame.pitch)}, zoom ${round(frame.zoom)}`;
+      return `- Frame ${index + 1} [${frame.id}]: ${frame.label}; ${camera}${action}${path}`;
+    }),
+    "Use these frames as direct visual evidence. The graph records physical nodes plus the camera direction of each captured frame.",
     ""
   ].join("\n");
+}
+
+function explorationGraphSection(graph: ExplorationGraphSummary | undefined): string {
+  if (!graph?.nodes.length) {
+    return "";
+  }
+  const nodes = graph.nodes.slice(-14).map((node) => ({
+    id: node.id,
+    label: node.label,
+    turnIndex: node.turnIndex,
+    arrivedVia: node.arrivedVia,
+    capturedFrames: node.frames.map((frame) => ({
+      id: frame.id,
+      label: frame.label,
+      heading: round(frame.heading),
+      pitch: round(frame.pitch),
+      zoom: round(frame.zoom)
+    })),
+    current: node.id === graph.currentNodeId
+  }));
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = graph.edges
+    .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
+    .slice(-18);
+  const evidence = graph.evidence.slice(-24).map((entry) => ({
+    type: entry.type,
+    source: entry.source,
+    text: entry.text,
+    confidence: round(entry.confidence),
+    nodeId: entry.nodeId,
+    frameId: entry.frameId
+  }));
+  return [
+    "Persistent 2.5D/topological scene memory:",
+    JSON.stringify({ nodes, edges, evidence, currentNodeId: graph.currentNodeId }, null, 2),
+    "Use this memory to remember physical nodes, camera directions, and extracted evidence without relying on hidden coordinates.",
+    ""
+  ].join("\n");
+}
+
+function navigatorInstructionFromHistory(history: AgentTurn[]): string | undefined {
+  for (const turn of [...history].reverse()) {
+    const verifierConcern = turn.verifier?.decision === "continue"
+      ? turn.verifier.concerns.find((concern) => concern.trim())
+      : undefined;
+    if (verifierConcern) {
+      return turn.geographer.instructionToNavigator
+        ? `${turn.geographer.instructionToNavigator} Verifier concern: ${verifierConcern}`
+        : `Resolve verifier concern: ${verifierConcern}`;
+    }
+    if (turn.geographer.instructionToNavigator) {
+      return turn.geographer.instructionToNavigator;
+    }
+  }
+  return undefined;
 }
 
 function historyTurnForPrompt(turn: AgentTurn) {
   return {
     index: turn.index,
     status: turn.status,
-    navigator: turn.navigator,
+    navigator: {
+      observation: turn.navigator.observation,
+      visibleText: turn.navigator.visibleText,
+      roadClues: turn.navigator.roadClues,
+      placeClues: turn.navigator.placeClues,
+      environmentClues: turn.navigator.environmentClues,
+      uncertainty: turn.navigator.uncertainty,
+      surveySteps: turn.navigator.surveySteps
+    },
     geographer: turn.geographer,
+    verifier: turn.verifier,
     uiMessage: turn.uiMessage
   };
 }

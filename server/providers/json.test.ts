@@ -5,19 +5,12 @@ const validOutput = {
   status: "final",
   navigator: {
     observation: "A French civic building and French text are visible.",
-    perceptionCalls: [],
-    action: {
-      type: "hold",
-      headingDelta: null,
-      pitchDelta: null,
-      zoomDelta: null,
-      linkIndex: null,
-      target: null,
-      heading: null,
-      pitch: null,
-      zoom: null,
-      reason: "The visible evidence is enough for a guess."
-    }
+    visibleText: ["French text"],
+    roadClues: [],
+    placeClues: ["French civic building"],
+    environmentClues: [],
+    uncertainty: [],
+    surveySteps: []
   },
   geographer: {
     hypotheses: [
@@ -32,6 +25,20 @@ const validOutput = {
       }
     ],
     instructionToNavigator: null,
+    finalGuess: {
+      country: "France",
+      region: "Ile-de-France",
+      city: "Paris",
+      lat: 48.8566,
+      lng: 2.3522,
+      confidence: 0.82,
+      evidence: ["French text", "Parisian civic architecture"]
+    }
+  },
+  verifier: {
+    decision: "accept",
+    reasoning: "The final guess is supported by independent city-specific cues.",
+    concerns: [],
     finalGuess: {
       country: "France",
       region: "Ile-de-France",
