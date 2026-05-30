@@ -76,7 +76,7 @@ export interface ExplorationGraphEdge {
   action: string;
 }
 
-export type ExplorationEvidenceSource = "visual" | "web" | "inferred";
+export type ExplorationEvidenceSource = "visual" | "inferred";
 
 export interface ExplorationEvidence {
   id: string;

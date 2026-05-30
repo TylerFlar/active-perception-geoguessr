@@ -113,6 +113,13 @@ app.post("/api/maps/look", async (request, response) => {
   }
 });
 
+app.get("/api/runs/:runId/graph", (request, response) => {
+  response.json({
+    ok: true,
+    graph: getExplorationGraph(request.params.runId)
+  });
+});
+
 app.get("/api/runs/:runId/logs", (request, response) => {
   const runId = request.params.runId;
   response.writeHead(200, {
@@ -180,7 +187,7 @@ app.post("/api/agent/step", async (request, response) => {
     beginNavigatorSession(runId, turnIndex, log);
     let navigatorSession: NavigatorSessionSnapshot | undefined;
     try {
-      navigatorOutput = await provider.run({
+      navigatorOutput = sanitizeNavigatorOutput(await provider.run({
         prompt: navigatorPrompt,
         request: stepRequest,
         snapshotPath: snapshot.filePath,
@@ -191,7 +198,7 @@ app.post("/api/agent/step", async (request, response) => {
         settings,
         log,
         agentRole: "navigator"
-      });
+      }), log);
     } finally {
       navigatorSession = endNavigatorSession(runId);
     }
@@ -475,19 +482,43 @@ function navigatorEvidence(output: AgentModelOutput): Parameters<typeof addEvide
   addEntries("environment", output.navigator.environmentClues, 0.6);
   addEntries("uncertainty", output.navigator.uncertainty, 0.3);
 
-  for (const step of output.navigator.surveySteps) {
-    const tool = step.tool.toLowerCase();
-    if (tool.includes("web") || tool.includes("search")) {
-      entries.push({
-        type: "summary",
-        source: "web",
-        text: step.resultSummary,
-        confidence: step.confidence
-      });
-    }
-  }
-
   return entries;
+}
+
+function sanitizeNavigatorOutput(
+  output: AgentModelOutput & { rawText?: string },
+  log?: RunLogger
+): AgentModelOutput & { rawText?: string } {
+  const allowedSurveySteps = output.navigator.surveySteps.filter((step) => !isExternalLookupStep(step));
+  const removed = output.navigator.surveySteps.length - allowedSurveySteps.length;
+  if (removed === 0) {
+    return output;
+  }
+  log?.({
+    source: "server",
+    level: "warn",
+    message: `Discarded ${removed} external lookup survey step(s); web search is outside the GeoGuessr-style evidence set.`
+  });
+  return {
+    ...output,
+    navigator: {
+      ...output.navigator,
+      surveySteps: allowedSurveySteps
+    }
+  };
+}
+
+function isExternalLookupStep(step: AgentModelOutput["navigator"]["surveySteps"][number]): boolean {
+  const text = `${step.tool} ${step.purpose} ${step.resultSummary}`.toLowerCase();
+  return [
+    "web",
+    "search",
+    "browser",
+    "google query",
+    "business directory",
+    "reverse image",
+    "lookup"
+  ].some((term) => text.includes(term));
 }
 
 async function captureFrame(params: {

@@ -89,10 +89,14 @@ describe("role prompts", () => {
     expect(navigatorPrompt).not.toContain("google_maps_pano");
     expect(navigatorPrompt).not.toContain("google_maps_explore");
     expect(navigatorPrompt).toContain("The Geographer handles location reasoning");
+    expect(navigatorPrompt).toContain("no web search");
+    expect(navigatorPrompt).toContain("GeoGuessr-style run");
+    expect(navigatorPrompt).not.toContain("Native web search or model tools may be used");
+    expect(navigatorPrompt).not.toContain("public searches grounded in visible clues");
     expect(navigatorPrompt).not.toContain("external OCR");
     expect(navigatorPrompt).not.toContain("pre-pass");
-    expect(geographerPrompt).toContain("Google Maps tools and image access are unavailable");
-    expect(verifierPrompt).toContain("Google Maps tools and image access are unavailable");
+    expect(geographerPrompt).toContain("Google Maps tools, image access, and web search are unavailable");
+    expect(verifierPrompt).toContain("Google Maps tools, image access, and web search are unavailable");
     expect(geographerPrompt).not.toContain("google_maps_");
     expect(verifierPrompt).not.toContain("google_maps_");
   });
@@ -104,7 +108,7 @@ describe("role prompts", () => {
     });
 
     expect(prompt).toContain("Submit the best current result every turn");
-    expect(prompt).toContain("One strong clue or a cluster of weaker clues");
+    expect(prompt).toContain("One strong clue or a cluster of weaker visual clues");
     expect(prompt).toContain("Return status=final");
     expect(prompt).not.toContain("server skips verification");
     expect(prompt).not.toContain("California");
