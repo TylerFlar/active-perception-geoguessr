@@ -141,6 +141,34 @@ input {
   overflow: hidden;
 }
 
+.viewSwitch {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(217, 222, 226, 0.9);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(31, 37, 40, 0.12);
+}
+
+.viewSwitch button {
+  min-width: 34px;
+  min-height: 32px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.viewSwitch button.active {
+  border-color: rgba(19, 113, 95, 0.25);
+  background: var(--soft);
+  color: var(--accent-strong);
+}
+
 .captureImage {
   width: 100%;
   height: 100%;
@@ -169,6 +197,121 @@ input {
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid var(--line);
   font-size: 0.82rem;
+}
+
+.sceneMap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(19, 113, 95, 0.1), transparent 26%),
+    linear-gradient(145deg, #eef3f0 0%, #f8faf9 52%, #eef1f4 100%);
+}
+
+.sceneMapTools {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  display: flex;
+  gap: 6px;
+}
+
+.sceneMapTools button {
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 24px rgba(31, 37, 40, 0.12);
+}
+
+.sceneMapSvg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sceneMapSvg:active {
+  cursor: grabbing;
+}
+
+.sceneEdges path {
+  fill: none;
+  stroke: #58707a;
+  stroke-width: 9;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+
+.sceneCameraRays path {
+  fill: rgba(180, 118, 32, 0.13);
+  stroke: rgba(180, 118, 32, 0.4);
+  stroke-width: 1.5;
+}
+
+.sceneCameraRays path.current,
+.liveCameraCone {
+  fill: rgba(220, 166, 54, 0.24);
+  stroke: rgba(161, 101, 25, 0.72);
+  stroke-width: 2;
+}
+
+.sceneNode {
+  filter: url(#node-shadow);
+}
+
+.sceneNode .nodeHalo {
+  fill: rgba(255, 255, 255, 0.72);
+  stroke: rgba(88, 112, 122, 0.22);
+  stroke-width: 1;
+}
+
+.sceneNode.current .nodeHalo {
+  fill: rgba(237, 247, 244, 0.95);
+  stroke: rgba(19, 113, 95, 0.72);
+  stroke-width: 3;
+}
+
+.nodeThumb {
+  stroke: #ffffff;
+  stroke-width: 3;
+}
+
+.nodeRing {
+  fill: none;
+  stroke: rgba(31, 37, 40, 0.68);
+  stroke-width: 2;
+}
+
+.sceneNode.current .nodeRing {
+  stroke: var(--accent-strong);
+  stroke-width: 3;
+}
+
+.nodeIndex {
+  fill: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 4px;
+}
+
+.nodeEvidence {
+  fill: #ffffff;
+  stroke: none;
+  font-size: 13px;
+  font-weight: 800;
+  text-anchor: middle;
+}
+
+.nodeEvidenceBadge {
+  fill: #4d6270;
+  stroke: #ffffff;
+  stroke-width: 2;
 }
 
 .missingKey {

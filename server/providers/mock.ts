@@ -89,7 +89,7 @@ export class MockProvider implements AgentProvider {
           : {
               decision: "continue" as const,
               reasoning: "The mock result is only a placeholder.",
-              concerns: ["Need a real visible or search-derived place clue."],
+              concerns: ["Need a real visible place clue."],
               finalGuess: undefined
             },
         uiMessage: shouldEnd

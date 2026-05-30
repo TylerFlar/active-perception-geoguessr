@@ -35,10 +35,10 @@ export function buildNavigatorPrompt(params: {
     "",
     "The easiest tool is google_maps_look because it can take one camera or movement action and immediately return the resulting screenshot. The lower-level tools are available when you want finer control. Each captured frame records the current physical node, heading, pitch, and zoom, so the graph can remember where you looked.",
     "",
-    "Follow Geographer or Verifier instructions when they point to a clue worth checking. Native web search or model tools may be used to check public information from visible clues; keep those search results separate from direct visual facts. Useful evidence includes visible text, road markings, signs, businesses, institutions, road shields, plates, vegetation, architecture, traffic control, and settlement clues.",
+    "Follow Geographer or Verifier instructions when they point to a clue worth checking. Useful evidence includes visible text, road markings, signs, businesses, institutions, road shields, plates, vegetation, architecture, traffic control, and settlement clues.",
     "",
     "Evidence boundary:",
-    "Evidence comes from the screenshot, prior observations, visible Street View imagery, explicit Google Maps tool outputs, and public searches grounded in visible clues. Hidden coordinates, URLs, Street View IDs, API metadata, file names, EXIF, and server-side browser state stay outside the evidence set. Masked black regions are unavailable pixels.",
+    "This is a GeoGuessr-style run: no web search, search engines, maps search, business directories, reverse image search, hidden coordinates, URLs, Street View IDs, API metadata, file names, EXIF, or server-side browser state. Evidence comes from the screenshot, prior observations, visible Street View imagery, and explicit Google Maps tool outputs. Masked black regions are unavailable pixels.",
     "",
     "Current camera state, with coordinates and URL intentionally removed:",
     JSON.stringify(redactedView, null, 2),
@@ -72,7 +72,7 @@ export function buildNavigatorPrompt(params: {
     "- Return status=continue.",
     "- Fill navigator.observation with a compact but evidence-rich survey report.",
     "- Fill visibleText, roadClues, placeClues, environmentClues, and uncertainty as short arrays. Use [] for an empty category.",
-    "- Fill navigator.surveySteps with visual inspection summaries, searches, and any tool action you used.",
+    "- Fill navigator.surveySteps with visual inspection summaries and Google Maps tool actions you used.",
     "- Leave geographer.finalGuess empty and verifier as decision=continue because those roles run separately.",
     outputFormatRules()
   ].join("\n");
@@ -87,7 +87,7 @@ export function buildGeographerPrompt(params: {
 
   return [
     "You are the Geographer in an active visual geolocation workflow.",
-    "Google Maps tools and image access are unavailable in this role. Reason from the Navigator's survey report and prior workflow messages.",
+    "Google Maps tools, image access, and web search are unavailable in this role. Reason from the Navigator's survey report and prior workflow messages.",
     "",
     "Navigator survey for this turn:",
     JSON.stringify({
@@ -106,7 +106,7 @@ export function buildGeographerPrompt(params: {
     history.length ? JSON.stringify(history, null, 2) : "[]",
     "",
     "Geographer behavior:",
-    "Submit the best current result every turn so the Verifier always has a concrete proposal to check. The goal is a useful city or region guess, not a proof. One strong clue or a cluster of weaker clues can be enough; road overlays, business clusters, partial text reads, and search results grounded in visible clues are all usable evidence.",
+    "Submit the best current result every turn so the Verifier always has a concrete proposal to check. The goal is a useful city or region guess, not a proof. One strong clue or a cluster of weaker visual clues can be enough; road overlays, business clusters, partial text reads, and scene context are all usable evidence.",
     "",
     "Use confidence and evidence notes to carry uncertainty instead of withholding the answer. If the exact city is unclear, make the best broader region/country guess and lower the confidence. If another observation would help, write that request in instructionToNavigator while still filling hypotheses and finalGuess with the current best result.",
     "",
@@ -130,7 +130,7 @@ export function buildVerifierPrompt(params: {
 
   return [
     "You are the Verifier in an active visual geolocation workflow.",
-    "Google Maps tools and image access are unavailable in this role. Verify from the Navigator's survey and the Geographer's stated reasoning.",
+    "Google Maps tools, image access, and web search are unavailable in this role. Verify from the Navigator's survey and the Geographer's stated reasoning.",
     "",
     "Navigator survey:",
     JSON.stringify({
@@ -152,11 +152,11 @@ export function buildVerifierPrompt(params: {
     history.length ? JSON.stringify(history, null, 2) : "[]",
     "",
     "Verifier behavior:",
-    "Run a soft sanity check on the Geographer's proposal. Accept plausible guesses that are supported by the survey, including guesses based on indirect, search-derived, or imperfect evidence. Revise when the same evidence clearly supports a better final answer. Continue only when the submitted result is effectively unusable, contradicted by the evidence, or one quick observation is very likely to change the city.",
+    "Run a soft sanity check on the Geographer's proposal. Accept plausible guesses that are supported by the visual survey, including guesses based on indirect or imperfect scene evidence. Revise when the same evidence clearly supports a better final answer. Continue only when the submitted result is effectively unusable, contradicted by the evidence, or one quick observation is very likely to change the city.",
     "",
     "Confidence is part of the evidence. Moderate-confidence city-level guesses are still provisional; they should usually become a continue request for one disambiguating clue, or a revision to a broader area, unless the evidence is unusually distinctive.",
     "",
-    "Movement is optional when the evidence is already strong. Google-rendered road labels, visible business clusters, search-derived business/street relationships, and missing physical cross-street signs are reasons to calibrate confidence rather than reasons to reject a plausible answer. A continue decision should name the single missing clue that would actually change the likely city.",
+    "Movement is optional when the evidence is already strong. Google-rendered road labels, visible business clusters, and missing physical cross-street signs are reasons to calibrate confidence rather than reasons to reject a plausible answer. A continue decision should name the single missing clue that would actually change the likely city.",
     "",
     "Output rules:",
     "- Copy the Navigator survey object.",

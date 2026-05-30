@@ -35,6 +35,14 @@ const DEFAULT_VIEWPORT: ViewportSize = { width: 1280, height: 720 };
 const STARTUP_TIMEOUT_MS = 45_000;
 const MAPS_SETTLE_MS = 900;
 const MIN_ACTION_SETTLE_MS = 500;
+const NAVIGATION_PITCH = 0;
+const NAVIGATION_ZOOM = 1.2;
+const SAFE_PITCH_MIN = -32;
+const SAFE_PITCH_MAX = 24;
+const EXTREME_PITCH_MIN = -48;
+const EXTREME_PITCH_MAX = 42;
+const MIN_FOV = 20;
+const MAX_FOV = 100;
 
 export class GoogleMapsController {
   private context?: BrowserContext;
@@ -91,6 +99,8 @@ export class GoogleMapsController {
     }
 
     const viewport = await viewportSize(page);
+    await recoverExtremePitch(page, viewport, this.state);
+    this.state = await this.readState(page);
     await addHudMasks(page, hudMaskRects(viewport));
     try {
       const data = await page.screenshot({
@@ -120,22 +130,35 @@ export class GoogleMapsController {
     await page.bringToFront();
     await this.waitForMaps(page);
     const viewport = await viewportSize(page);
+    this.state = await this.readState(page);
 
     if (action.type === "pan") {
-      await dragStreetView(page, viewport, action.headingDelta, action.pitchDelta ?? 0);
-      this.state = {
-        ...this.state,
+      const target = {
         heading: normalizeHeading(this.state.heading + action.headingDelta),
-        pitch: clamp(this.state.pitch + (action.pitchDelta ?? 0), -90, 90)
+        pitch: safePitch(this.state.pitch + (action.pitchDelta ?? 0)),
+        zoom: this.state.zoom
       };
+      if (!(await setStreetViewCamera(page, target))) {
+        await dragStreetView(page, viewport, action.headingDelta, action.pitchDelta ?? 0);
+      }
+      this.state = { ...this.state, ...target };
     } else if (action.type === "zoom") {
-      await wheelZoom(page, viewport, action.zoomDelta);
-      this.state = {
-        ...this.state,
+      const target = {
+        heading: this.state.heading,
+        pitch: safePitch(this.state.pitch),
         zoom: clamp(this.state.zoom + action.zoomDelta, 0, 4)
       };
+      if (!(await setStreetViewCamera(page, target))) {
+        await wheelZoom(page, viewport, action.zoomDelta);
+      }
+      this.state = { ...this.state, ...target };
     } else if (action.type === "move") {
+      await levelCameraForNavigation(page, viewport, this.state);
+      this.state = await this.readState(page);
       await clickMoveTarget(page, viewport, action.linkIndex);
+      await page.waitForTimeout(MAPS_SETTLE_MS);
+      this.state = await this.readState(page);
+      await levelCameraAfterMove(page, viewport, this.state);
     } else if (action.type === "inspect") {
       await inspectTarget(page, viewport, this.state, action);
     }
@@ -339,14 +362,127 @@ async function inspectTarget(
   state: StreetViewState,
   action: Extract<StreetViewAction, { type: "inspect" }>
 ): Promise<void> {
+  const target = {
+    heading: typeof action.heading === "number" ? normalizeHeading(action.heading) : state.heading,
+    pitch: typeof action.pitch === "number" ? safePitch(action.pitch) : safePitch(state.pitch),
+    zoom: typeof action.zoom === "number" ? clamp(action.zoom, 0, 4) : state.zoom
+  };
+  if (await setStreetViewCamera(page, target)) {
+    return;
+  }
   if (typeof action.heading === "number" || typeof action.pitch === "number") {
     const headingDelta = typeof action.heading === "number" ? shortestHeadingDelta(state.heading, action.heading) : 0;
-    const pitchDelta = typeof action.pitch === "number" ? action.pitch - state.pitch : 0;
+    const pitchDelta = typeof action.pitch === "number" ? safePitch(action.pitch) - state.pitch : 0;
     await dragStreetView(page, viewport, headingDelta, pitchDelta);
   }
   if (typeof action.zoom === "number") {
     await wheelZoom(page, viewport, action.zoom - state.zoom);
   }
+}
+
+async function levelCameraForNavigation(page: Page, viewport: ViewportSize, state: StreetViewState): Promise<void> {
+  const target = {
+    heading: state.heading,
+    pitch: NAVIGATION_PITCH,
+    zoom: Math.min(state.zoom, NAVIGATION_ZOOM)
+  };
+  if (await setStreetViewCamera(page, target)) {
+    return;
+  }
+  await dragStreetView(page, viewport, 0, target.pitch - state.pitch);
+  await wheelZoom(page, viewport, target.zoom - state.zoom);
+}
+
+async function levelCameraAfterMove(page: Page, viewport: ViewportSize, state: StreetViewState): Promise<void> {
+  const target = {
+    heading: state.heading,
+    pitch: NAVIGATION_PITCH,
+    zoom: Math.min(state.zoom, NAVIGATION_ZOOM)
+  };
+  if (await setStreetViewCamera(page, target)) {
+    return;
+  }
+  await dragStreetView(page, viewport, 0, target.pitch - state.pitch);
+  await wheelZoom(page, viewport, target.zoom - state.zoom);
+}
+
+async function recoverExtremePitch(page: Page, viewport: ViewportSize, state: StreetViewState): Promise<void> {
+  if (state.pitch < EXTREME_PITCH_MIN || state.pitch > EXTREME_PITCH_MAX) {
+    const target = {
+      heading: state.heading,
+      pitch: NAVIGATION_PITCH,
+      zoom: Math.min(state.zoom, NAVIGATION_ZOOM)
+    };
+    if (await setStreetViewCamera(page, target)) {
+      return;
+    }
+    await dragStreetView(page, viewport, 0, target.pitch - state.pitch);
+    await wheelZoom(page, viewport, target.zoom - state.zoom);
+  }
+}
+
+async function setStreetViewCamera(
+  page: Page,
+  target: Pick<StreetViewState, "heading" | "pitch" | "zoom">
+): Promise<boolean> {
+  const url = page.url();
+  const nextUrl = streetViewUrlWithCamera(url, target);
+  if (!nextUrl || nextUrl === url) {
+    return Boolean(nextUrl);
+  }
+  try {
+    await page.goto(nextUrl, { waitUntil: "domcontentloaded", timeout: STARTUP_TIMEOUT_MS });
+    await page.waitForTimeout(MIN_ACTION_SETTLE_MS);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function streetViewUrlWithCamera(
+  url: string,
+  target: Pick<StreetViewState, "heading" | "pitch" | "zoom">
+): string | undefined {
+  if (!isStreetViewUrl(url)) {
+    return undefined;
+  }
+
+  const heading = roundCameraValue(normalizeHeading(target.heading));
+  const tilt = roundCameraValue(90 - safePitch(target.pitch));
+  const fov = roundCameraValue(zoomToFov(target.zoom));
+  const next = replaceStreetViewCameraTokens(url, fov, heading, tilt);
+  if (next) {
+    return next;
+  }
+
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("heading", String(heading));
+    parsed.searchParams.set("pitch", String(safePitch(target.pitch)));
+    parsed.searchParams.set("fov", String(fov));
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function replaceStreetViewCameraTokens(url: string, fov: number, heading: number, tilt: number): string | undefined {
+  if (!/,3a(?:,|\/|\?|$)/.test(url)) {
+    return undefined;
+  }
+  return url.replace(/,3a(?:,-?\d+(?:\.\d+)?[yht])*/g, `,3a,${fov}y,${heading}h,${tilt}t`);
+}
+
+function zoomToFov(zoom: number): number {
+  return clamp(MAX_FOV - clamp(zoom, 0, 4) * 20, MIN_FOV, MAX_FOV);
+}
+
+function safePitch(pitch: number): number {
+  return clamp(pitch, SAFE_PITCH_MIN, SAFE_PITCH_MAX);
+}
+
+function roundCameraValue(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 function safeCenter(viewport: ViewportSize): { x: number; y: number } {

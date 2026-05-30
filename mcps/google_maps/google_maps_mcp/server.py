@@ -49,7 +49,7 @@ def google_maps_look(
     zoom: float | None = None,
     reason: str = "Look around for geolocation evidence.",
 ) -> ToolResult:
-    """Optionally pan/zoom/move/inspect, then capture the resulting Street View frame."""
+    """Optionally pan, zoom, move, or inspect, then capture the resulting Street View frame."""
     payload = _request(
         "POST",
         "/api/maps/look",
@@ -98,7 +98,7 @@ def google_maps_zoom(zoom_delta: float = 0, reason: str = "Zoom Street View.") -
 
 @mcp.tool("google_maps_move")
 def google_maps_move(link_index: int = 0, reason: str = "Move to a Street View screen target.") -> dict[str, Any]:
-    """Click one of the available screen move targets in Google Maps Street View."""
+    """Level the camera and click one of the available Street View movement targets."""
     return _action(
         {
             "type": "move",

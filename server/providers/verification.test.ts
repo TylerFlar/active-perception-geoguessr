@@ -138,7 +138,7 @@ describe("verifier gate", () => {
       verifier: {
         decision: "continue",
         reasoning: "The result is only a placeholder.",
-        concerns: ["Need a real visible or search-derived place clue."]
+        concerns: ["Need a real visible place clue."]
       }
     });
 
