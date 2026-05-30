@@ -123,6 +123,61 @@ describe("agent output schema", () => {
 
     expect(parsed.navigator.surveySteps[0].tool).toBe("google_maps_move");
   });
+
+  it("hydrates blank role-handoff placeholders instead of failing the turn", () => {
+    const parsed = AgentModelOutputSchema.parse({
+      status: "continue",
+      navigator: {
+        observation: "Navigator surveyed a remote wet roadside scene.",
+        visibleText: [],
+        roadClues: ["Two-lane highway"],
+        placeClues: [],
+        environmentClues: ["Wet roadside ditch"],
+        uncertainty: ["No readable place sign"],
+        surveySteps: [
+          {
+            tool: "",
+            purpose: "",
+            resultSummary: "",
+            confidence: 0.2
+          }
+        ]
+      },
+      geographer: {
+        hypotheses: [],
+        instructionToNavigator: "",
+        finalGuess: {
+          country: null,
+          region: null,
+          city: null,
+          lat: null,
+          lng: null,
+          confidence: 0,
+          evidence: []
+        }
+      },
+      verifier: {
+        decision: "continue",
+        reasoning: "",
+        concerns: [],
+        finalGuess: {
+          country: null,
+          region: null,
+          city: null,
+          lat: null,
+          lng: null,
+          confidence: 0,
+          evidence: []
+        }
+      },
+      uiMessage: ""
+    });
+
+    expect(parsed.verifier.reasoning).toBe("Verifier role has not run yet.");
+    expect(parsed.geographer.instructionToNavigator).toBeUndefined();
+    expect(parsed.navigator.surveySteps[0].tool).toBe("role_handoff");
+    expect(parsed.uiMessage).toBe("Agent step complete.");
+  });
 });
 
 function collectMissingRequiredKeys(value: unknown, path: string, misses: string[]): void {

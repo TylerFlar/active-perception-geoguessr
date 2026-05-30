@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-const OptionalStringSchema = z.preprocess((value) => value === null ? undefined : value, z.string().optional());
+const OptionalStringSchema = z.preprocess(
+  (value) => typeof value === "string" && value.trim() === "" ? undefined : value === null ? undefined : value,
+  z.string().optional()
+);
+const RequiredStringSchema = (fallback: string) =>
+  z.preprocess(
+    (value) => typeof value === "string" && value.trim() ? value : fallback,
+    z.string().min(1)
+  );
 const OptionalLatitudeSchema = z.preprocess(
   (value) => value === null ? undefined : value,
   z.number().min(-90).max(90).optional()
@@ -10,9 +18,9 @@ const OptionalLongitudeSchema = z.preprocess(
   z.number().min(-180).max(180).optional()
 );
 export const SurveyStepSchema = z.object({
-  tool: z.string().min(1),
-  purpose: z.string().min(1),
-  resultSummary: z.string().min(1),
+  tool: RequiredStringSchema("role_handoff"),
+  purpose: RequiredStringSchema("Placeholder role handoff."),
+  resultSummary: RequiredStringSchema("No survey result was provided for this placeholder step."),
   confidence: z.number().min(0).max(1)
 });
 
@@ -33,7 +41,7 @@ const OptionalGeoHypothesisSchema = z.preprocess(
 
 export const VerifierReviewSchema = z.object({
   decision: z.enum(["accept", "revise", "continue"]),
-  reasoning: z.string().min(1),
+  reasoning: RequiredStringSchema("Verifier role has not run yet."),
   concerns: z.array(z.string()).default([]),
   finalGuess: OptionalGeoHypothesisSchema
 });
@@ -41,7 +49,7 @@ export const VerifierReviewSchema = z.object({
 export const AgentModelOutputSchema = z.object({
   status: z.enum(["continue", "final", "error"]),
   navigator: z.object({
-    observation: z.string().min(1),
+    observation: RequiredStringSchema("No navigator observation was provided."),
     visibleText: z.array(z.string()).default([]),
     roadClues: z.array(z.string()).default([]),
     placeClues: z.array(z.string()).default([]),
@@ -55,7 +63,7 @@ export const AgentModelOutputSchema = z.object({
     finalGuess: OptionalGeoHypothesisSchema
   }),
   verifier: VerifierReviewSchema,
-  uiMessage: z.string().min(1)
+  uiMessage: RequiredStringSchema("Agent step complete.")
 });
 
 export type AgentModelOutput = z.infer<typeof AgentModelOutputSchema>;
