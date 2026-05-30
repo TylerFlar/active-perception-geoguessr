@@ -73,7 +73,7 @@ export function buildNavigatorPrompt(params: {
     "- Fill navigator.observation with a compact but evidence-rich survey report.",
     "- Fill visibleText, roadClues, placeClues, environmentClues, and uncertainty as short arrays. Use [] for an empty category.",
     "- Fill navigator.surveySteps with visual inspection summaries and Google Maps tool actions you used.",
-    "- Leave geographer.finalGuess empty and verifier as decision=continue because those roles run separately.",
+    "- Treat geographer and verifier as transport placeholders because those roles run separately. Use verifier.decision=continue and verifier.reasoning=\"Verifier role has not run yet.\".",
     outputFormatRules()
   ].join("\n");
 }
@@ -115,7 +115,7 @@ export function buildGeographerPrompt(params: {
     "- Copy the Navigator object exactly from the provided survey.",
     "- Fill hypotheses and finalGuess with the current best answer, evidence, and confidence.",
     "- Fill instructionToNavigator when one concrete next observation could improve or correct the guess.",
-    "- Leave verifier as decision=continue with a short placeholder because the Verifier role runs separately after your result.",
+    "- Treat verifier as a transport placeholder because that role runs separately after your result. Use verifier.decision=continue and verifier.reasoning=\"Verifier role has not run yet.\".",
     outputFormatRules()
   ].join("\n");
 }
