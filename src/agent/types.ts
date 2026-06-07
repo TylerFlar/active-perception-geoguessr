@@ -76,7 +76,7 @@ export interface ExplorationGraphEdge {
   action: string;
 }
 
-export type ExplorationEvidenceSource = "visual" | "inferred";
+export type ExplorationEvidenceSource = "physical" | "inferred" | "overlay" | "uncertain";
 
 export interface ExplorationEvidence {
   id: string;
@@ -128,6 +128,7 @@ export interface AgentTurn {
     environmentClues: string[];
     uncertainty: string[];
     surveySteps: SurveyStepSummary[];
+    evidence: Pick<ExplorationEvidence, "type" | "source" | "text" | "confidence">[];
   };
   geographer: {
     hypotheses: GeoHypothesis[];

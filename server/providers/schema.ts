@@ -46,6 +46,14 @@ export const VerifierReviewSchema = z.object({
   finalGuess: OptionalGeoHypothesisSchema
 });
 
+const NavigatorEvidenceSchema = z.object({
+  type: z.enum(["text", "road", "place", "environment", "uncertainty", "summary"]),
+  source: z.enum(["physical", "inferred", "overlay", "uncertain"]),
+  text: z.string(),
+  confidence: z.number().min(0).max(1),
+  useForGuess: z.boolean().default(false),
+});
+
 export const AgentModelOutputSchema = z.object({
   status: z.enum(["continue", "final", "error"]),
   navigator: z.object({
@@ -55,7 +63,8 @@ export const AgentModelOutputSchema = z.object({
     placeClues: z.array(z.string()).default([]),
     environmentClues: z.array(z.string()).default([]),
     uncertainty: z.array(z.string()).default([]),
-    surveySteps: z.array(SurveyStepSchema).default([])
+    surveySteps: z.array(SurveyStepSchema).default([]),
+    evidence: z.array(NavigatorEvidenceSchema).default([]),
   }),
   geographer: z.object({
     hypotheses: z.array(GeoHypothesisSchema).default([]),
@@ -99,7 +108,8 @@ export const agentOutputJsonSchema = {
         "placeClues",
         "environmentClues",
         "uncertainty",
-        "surveySteps"
+        "surveySteps",
+        "evidence",
       ],
       properties: {
         observation: { type: "string" },
@@ -121,7 +131,28 @@ export const agentOutputJsonSchema = {
               confidence: { type: "number", minimum: 0, maximum: 1 }
             }
           }
-        }
+        },
+        evidence: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["type", "source", "text", "confidence", "useForGuess"],
+            properties: {
+              type: {
+                type: "string",
+                enum: ["text", "road", "place", "environment", "uncertainty", "summary"],
+              },
+              source: {
+                type: "string",
+                enum: ["physical", "inferred", "overlay", "uncertain"],
+              },
+              text: { type: "string" },
+              confidence: { type: "number", minimum: 0, maximum: 1 },
+              useForGuess: { type: "boolean" },
+            },
+          },
+        },
       }
     },
     geographer: {

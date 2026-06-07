@@ -77,6 +77,27 @@ export function addFrameToGraph(params: {
   return snapshotGraph(graph);
 }
 
+export function usableEvidence(
+  evidence: ExplorationEvidence[],
+): ExplorationEvidence[] {
+  return evidence.filter((e) => {
+    if (e.source === "overlay") return false;
+    if (e.source === "uncertain") return false;
+
+    // keep real-world and derived evidence
+    if (e.source === "physical") return e.confidence >= 0.5;
+    if (e.source === "inferred") return e.confidence >= 0.7;
+
+    return false;
+  });
+}
+
+export function rejectedEvidence(
+  evidence: ExplorationEvidence[],
+): ExplorationEvidence[] {
+  return evidence.filter((e) => !usableEvidence([e]).length);
+}
+
 export function getExplorationGraph(runId: string | undefined): ExplorationGraphSummary | undefined {
   if (!runId) {
     return undefined;

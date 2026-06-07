@@ -452,16 +452,23 @@ function recordNavigatorFrame(capture: { frame?: NavigatorFrame; currentUrl?: st
 }
 
 function navigatorEvidence(output: AgentModelOutput): Parameters<typeof addEvidenceToGraph>[0]["evidence"] {
+  // agent returned evidence
+  if (output.navigator.evidence?.length) {
+    return output.navigator.evidence;
+  }
+  
+  // fallback
   const entries: Parameters<typeof addEvidenceToGraph>[0]["evidence"] = [];
   const addEntries = (
     type: Parameters<typeof addEvidenceToGraph>[0]["evidence"][number]["type"],
     values: string[],
-    confidence: number
+    confidence: number,
+    source: Parameters<typeof addEvidenceToGraph>[0]["evidence"][number]["source"]
   ) => {
     for (const value of values) {
       entries.push({
         type,
-        source: "visual",
+        source,
         text: value,
         confidence
       });
@@ -476,11 +483,11 @@ function navigatorEvidence(output: AgentModelOutput): Parameters<typeof addEvide
       confidence: 0.65
     });
   }
-  addEntries("text", output.navigator.visibleText, 0.85);
-  addEntries("road", output.navigator.roadClues, 0.75);
-  addEntries("place", output.navigator.placeClues, 0.75);
-  addEntries("environment", output.navigator.environmentClues, 0.6);
-  addEntries("uncertainty", output.navigator.uncertainty, 0.3);
+  addEntries("text", output.navigator.visibleText, 0.85, "uncertain");
+  addEntries("road", output.navigator.roadClues, 0.75, "uncertain");
+  addEntries("place", output.navigator.placeClues, 0.75, "uncertain");
+  addEntries("environment", output.navigator.environmentClues, 0.6, "physical");
+  addEntries("uncertainty", output.navigator.uncertainty, 0.3, "inferred");
 
   return entries;
 }
@@ -645,7 +652,8 @@ function buildErrorTurn(
       placeClues: [],
       environmentClues: [],
       uncertainty: [message],
-      surveySteps: []
+      surveySteps: [],
+      evidence: [],
     },
     geographer: {
       hypotheses: [],
