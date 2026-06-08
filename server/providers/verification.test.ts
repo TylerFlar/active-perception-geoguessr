@@ -158,7 +158,8 @@ function baseFinalOutput(): AgentModelOutput {
       placeClues: [],
       environmentClues: [],
       uncertainty: [],
-      surveySteps: []
+      surveySteps: [],
+      evidence: []
     },
     geographer: {
       hypotheses: [

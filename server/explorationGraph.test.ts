@@ -63,7 +63,7 @@ describe("exploration graph", () => {
       evidence: [
         {
           type: "road",
-          source: "visual",
+          source: "physical",
           text: "Road overlay says Main St",
           confidence: 0.8
         }
@@ -75,7 +75,7 @@ describe("exploration graph", () => {
       nodeId: moved.currentNodeId,
       frameId: "next",
       type: "road",
-      source: "visual"
+      source: "physical"
     });
   });
 });

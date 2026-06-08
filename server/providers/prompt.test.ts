@@ -23,7 +23,8 @@ const navigatorOutput: AgentModelOutput = {
     placeClues: [],
     environmentClues: [],
     uncertainty: ["School sign unreadable"],
-    surveySteps: []
+    surveySteps: [],
+    evidence: []
   },
   geographer: {
     hypotheses: [],

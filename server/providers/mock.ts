@@ -26,7 +26,8 @@ export class MockProvider implements AgentProvider {
           resultSummary: input.snapshotPath ? "Snapshot file was captured." : "Snapshot was unavailable.",
           confidence: input.snapshotPath ? 0.9 : 0.2
         }
-      ]
+      ],
+      evidence: []
     };
 
     if (input.agentRole === "navigator") {
@@ -116,7 +117,8 @@ export class MockProvider implements AgentProvider {
               resultSummary: "No external vision provider was called.",
               confidence: 1
             }
-          ]
+          ],
+          evidence: []
         },
         geographer: {
           hypotheses: [
@@ -163,7 +165,8 @@ export class MockProvider implements AgentProvider {
             resultSummary: input.snapshotPath ? "Snapshot file was captured." : "No snapshot was captured.",
             confidence: input.snapshotPath ? 0.9 : 0.2
           }
-        ]
+        ],
+        evidence: []
       },
       geographer: {
         hypotheses: [
