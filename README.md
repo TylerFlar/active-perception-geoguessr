@@ -31,7 +31,7 @@ The app uses one project-local MCP server:
 
 - `mcps/google_maps`: `google_maps_status`, `google_maps_look`, `google_maps_screenshot`, `google_maps_pan`, `google_maps_zoom`, `google_maps_move`, `google_maps_inspect`
 
-The Navigator receives the current Street View frame and can decide whether movement or camera work is useful. `google_maps_look` is the easiest path: it can pan, zoom, inspect, move, or simply capture, then returns the resulting screenshot. Captured frames are stored in a 2.5D/topological scene graph with physical nodes, move edges, camera heading/pitch/zoom, and extracted evidence. There is no OCR/ALPR pre-pass and no separate crop/OCR/plate MCP in the default workflow.
+The Navigator receives the current Street View frame and can decide whether movement or camera work is useful. `google_maps_look` is the easiest path: it can pan, zoom, inspect, move, or simply capture, then returns the resulting screenshot. Captured frames are stored in a 2.5D/topological scene graph with physical nodes, move edges, camera heading/pitch/zoom, and extracted evidence.
 
 The Geographer and Verifier receive only the Navigator's text survey and prior workflow messages. They do not receive Google Maps tools, MCP servers, screenshots, or hidden Maps metadata.
 
