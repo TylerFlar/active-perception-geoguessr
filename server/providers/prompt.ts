@@ -101,6 +101,50 @@ export function buildNavigatorPrompt(params: {
   ].join("\n");
 }
 
+type NavigatorSurvey = AgentModelOutput["navigator"];
+
+// Clues the Navigator explicitly tagged as Google Maps overlays or as uncertain (possibly
+// map-rendered) text. These are the same sources rejectedEvidence() excludes from the scene
+// graph; here we use them to keep overlay road/POI labels out of the Geographer's per-turn
+// survey so a location guess cannot rest on Google-rendered text.
+export function overlayClueTexts(navigator: NavigatorSurvey): Set<string> {
+  const rejected = new Set<string>();
+  for (const item of navigator.evidence ?? []) {
+    if (item.source === "overlay" || item.source === "uncertain") {
+      const text = item.text.trim().toLowerCase();
+      if (text) {
+        rejected.add(text);
+      }
+    }
+  }
+  return rejected;
+}
+
+function withoutOverlayClues(values: string[], rejected: Set<string>): string[] {
+  if (rejected.size === 0) {
+    return values;
+  }
+  return values.filter((value) => !rejected.has(value.trim().toLowerCase()));
+}
+
+// The Navigator survey as the Geographer should see it. Structured clues the Navigator flagged
+// as overlay/uncertain are withheld so they cannot drive the guess. Matching is by normalized
+// clue text, so when the Navigator did not classify anything (empty evidence) nothing is
+// removed and the result is identical to the raw survey. The Verifier still receives the full,
+// unfiltered survey so it can audit whether overlay text influenced the guess.
+export function geographerSurvey(navigator: NavigatorSurvey) {
+  const rejected = overlayClueTexts(navigator);
+  return {
+    observation: navigator.observation,
+    visibleText: withoutOverlayClues(navigator.visibleText, rejected),
+    roadClues: withoutOverlayClues(navigator.roadClues, rejected),
+    placeClues: withoutOverlayClues(navigator.placeClues, rejected),
+    environmentClues: navigator.environmentClues,
+    uncertainty: navigator.uncertainty,
+    surveySteps: navigator.surveySteps
+  };
+}
+
 export function buildGeographerPrompt(params: {
   request: AgentStepRequest;
   navigatorOutput: AgentModelOutput;
@@ -112,16 +156,9 @@ export function buildGeographerPrompt(params: {
     "You are the Geographer in an active visual geolocation workflow.",
     "Google Maps tools, image access, and web search are unavailable in this role. Reason from the Navigator's survey report and prior workflow messages.",
     "",
-    "Navigator survey for this turn:",
-    JSON.stringify({
-      observation: params.navigatorOutput.navigator.observation,
-      visibleText: params.navigatorOutput.navigator.visibleText,
-      roadClues: params.navigatorOutput.navigator.roadClues,
-      placeClues: params.navigatorOutput.navigator.placeClues,
-      environmentClues: params.navigatorOutput.navigator.environmentClues,
-      uncertainty: params.navigatorOutput.navigator.uncertainty,
-      surveySteps: params.navigatorOutput.navigator.surveySteps
-    }, null, 2),
+    "Navigator survey for this turn (clues the Navigator flagged as Google overlays or uncertain text have been withheld):",
+    JSON.stringify(geographerSurvey(params.navigatorOutput.navigator), null, 2),
+    "Reason only from the clues that remain; do not reconstruct or guess at withheld overlay or uncertain text.",
     "",
     explorationGraphSection(params.explorationGraph),
     "",
@@ -129,7 +166,7 @@ export function buildGeographerPrompt(params: {
     history.length ? JSON.stringify(history, null, 2) : "[]",
     "",
     "Geographer behavior:",
-    "Submit the best current result every turn so the Verifier always has a concrete proposal to check. The goal is a useful city or region guess, not a proof. One strong clue or a cluster of weaker visual clues can be enough; road overlays, business clusters, partial text reads, and scene context are all usable evidence.",
+    "Submit the best current result every turn so the Verifier always has a concrete proposal to check. The goal is a useful city or region guess, not a proof. One strong clue or a cluster of weaker visual clues can be enough; business clusters, partial text reads, and physical scene context are usable evidence, but Google-rendered map overlays and text flagged as uncertain are not.",
     "",
     "Use confidence and evidence notes to carry uncertainty instead of withholding the answer. If the exact city is unclear, make the best broader region/country guess and lower the confidence. If another observation would help, write that request in instructionToNavigator while still filling hypotheses and finalGuess with the current best result.",
     "",
@@ -249,14 +286,6 @@ function explorationGraphSection(graph: ExplorationGraphSummary | undefined): st
     .slice(-18);
   const usable = usableEvidence(graph.evidence);
   const rejected = rejectedEvidence(graph.evidence);
-  // const evidence = graph.evidence.slice(-24).map((entry) => ({
-  //   type: entry.type,
-  //   source: entry.source,
-  //   text: entry.text,
-  //   confidence: round(entry.confidence),
-  //   nodeId: entry.nodeId,
-  //   frameId: entry.frameId
-  // }));
   const usableEvidenceEntries = usable.slice(-24).map((entry) => ({
     type: entry.type,
     source: entry.source,
@@ -276,7 +305,7 @@ function explorationGraphSection(graph: ExplorationGraphSummary | undefined): st
   }));
   return [
     "Persistent 2.5D/topological scene memory:",
-    JSON.stringify({ nodes, edges, usableEvidenceEntries, rejectedEvidenceEntries, currentNodeId: graph.currentNodeId }, null, 2),
+    JSON.stringify({ nodes, edges, usableEvidence: usableEvidenceEntries, rejectedEvidence: rejectedEvidenceEntries, currentNodeId: graph.currentNodeId }, null, 2),
     "Use this memory to remember physical nodes, camera directions, and extracted evidence without relying on hidden coordinates.",
     "Only use usableEvidence for geolocation hypotheses.",
     "Rejected evidence contains overlay, uncertain, or otherwise excluded clues and must not influence the guess.",
