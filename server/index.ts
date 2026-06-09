@@ -107,7 +107,7 @@ app.post("/api/maps/look", async (request, response) => {
     }
     const capture = await captureFrame({ label: `Look after ${action.type}`, log: activeNavigatorSession?.log });
     const graph = recordNavigatorFrame(capture);
-    response.json({ ok: true, action: publicStreetViewAction(action), ...capture.snapshot, frame: capture.frame, graph });
+    response.json({ ok: true, action, ...capture.snapshot, frame: capture.frame, graph });
   } catch (error) {
     response.json({ ok: false, error: error instanceof Error ? error.message : String(error) });
   }
@@ -452,12 +452,12 @@ function recordNavigatorFrame(capture: { frame?: NavigatorFrame; currentUrl?: st
 }
 
 function navigatorEvidence(output: AgentModelOutput): Parameters<typeof addEvidenceToGraph>[0]["evidence"] {
-  // agent returned evidence
+  // Prefer the structured evidence the Navigator classified itself.
   if (output.navigator.evidence?.length) {
     return output.navigator.evidence;
   }
   
-  // fallback
+  // Otherwise synthesize evidence entries from the loose clue arrays.
   const entries: Parameters<typeof addEvidenceToGraph>[0]["evidence"] = [];
   const addEntries = (
     type: Parameters<typeof addEvidenceToGraph>[0]["evidence"][number]["type"],
@@ -734,10 +734,6 @@ function normalizeLookAction(value: unknown): StreetViewAction {
     };
   }
   return normalizeStreetViewAction({ ...value, type: actionType });
-}
-
-function publicStreetViewAction(action: StreetViewAction): StreetViewAction {
-  return action;
 }
 
 function normalizeStreetViewAction(value: unknown): StreetViewAction {
