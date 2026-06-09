@@ -1,9 +1,0 @@
-pyproject.toml
-active_geo_google_maps_mcp.egg-info/PKG-INFO
-active_geo_google_maps_mcp.egg-info/SOURCES.txt
-active_geo_google_maps_mcp.egg-info/dependency_links.txt
-active_geo_google_maps_mcp.egg-info/requires.txt
-active_geo_google_maps_mcp.egg-info/top_level.txt
-google_maps_mcp/__init__.py
-google_maps_mcp/__main__.py
-google_maps_mcp/server.py

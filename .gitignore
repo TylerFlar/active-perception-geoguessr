@@ -6,4 +6,5 @@ models/
 mcps/**/.venv/
 __pycache__/
 .pytest_cache/
+*.egg-info/
 *.tsbuildinfo
