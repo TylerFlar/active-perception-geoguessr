@@ -1,6 +1,8 @@
 import type { AgentStepRequest, AgentTurn, ExplorationGraphSummary, StreetViewState } from "../../src/agent/types";
 import type { McpConfigFile } from "../../src/mcp/mcpConfig";
 import type { AgentModelOutput } from "./schema";
+import { buildCoveragePrompt } from "../coveragePolicy";
+import { rejectedEvidence, usableEvidence } from "../explorationGraph";
 
 export interface NavigatorFrame {
   id: string;
@@ -40,6 +42,15 @@ export function buildNavigatorPrompt(params: {
     "Evidence boundary:",
     "This is a GeoGuessr-style run: no web search, search engines, maps search, business directories, reverse image search, hidden coordinates, URLs, Street View IDs, API metadata, file names, EXIF, or server-side browser state. Evidence comes from the screenshot, prior observations, visible Street View imagery, and explicit Google Maps tool outputs. Masked black regions are unavailable pixels.",
     "",
+    "Text/evidence source rules:",
+    "- Classify every text clue as physical, overlay, uncertain, or inferred.",
+    "- physical = actually present in the photographed world, such as a real sign, building text, vehicle marking, or painted road marking.",
+    "- overlay = Google Maps/Street View rendered labels, road names, POI labels, UI text, route labels, or map artifacts.",
+    "- uncertain = unclear whether the clue is physical or rendered by Google.",
+    "- Do not use overlay evidence for geolocation.",
+    "- Treat uncertain evidence as weak and do not rely on it for final guesses.",
+    "- If a road name appears printed flat on the pavement without a visible physical sign or real painted marking, classify it as overlay or uncertain.",
+    "",
     "Current camera state, with coordinates and URL intentionally removed:",
     JSON.stringify(redactedView, null, 2),
     "",
@@ -49,6 +60,7 @@ export function buildNavigatorPrompt(params: {
     "",
     framesSection(params.frames),
     explorationGraphSection(params.explorationGraph),
+    buildCoveragePrompt(params.explorationGraph),
     "Available Google Maps MCP tools:",
     "- google_maps_look: easiest tool. Optionally performs one action, then captures and returns the current masked Street View frame with node id, heading, pitch, and zoom.",
     "- google_maps_screenshot: captures the current masked Street View frame as image content and records node id, heading, pitch, and zoom.",
@@ -72,8 +84,19 @@ export function buildNavigatorPrompt(params: {
     "- Return status=continue.",
     "- Fill navigator.observation with a compact but evidence-rich survey report.",
     "- Fill visibleText, roadClues, placeClues, environmentClues, and uncertainty as short arrays. Use [] for an empty category.",
+    "- Fill navigator.evidence with every clue you mention.",
+    "- For each evidence item, classify source as physical, inferred, overlay, or uncertain.",
+    "- physical = actually present in the photographed world, such as real signs, real building text, vehicle markings, painted road markings, architecture, vegetation, or road layout.",
+    "- overlay = Google Maps/Street View rendered road labels, POI labels, UI text, route labels, or map artifacts.",
+    "- uncertain = unclear whether the clue is physical or rendered by Google.",
+    "- inferred = conclusion derived from multiple clues.",
+    "- Do not use overlay evidence for geolocation.",
+    "- If road text appears flat on the pavement without a visible physical sign or real painted road marking, mark it overlay or uncertain.",
     "- Fill navigator.surveySteps with visual inspection summaries and Google Maps tool actions you used.",
     "- Treat geographer and verifier as transport placeholders because those roles run separately. Use verifier.decision=continue and verifier.reasoning=\"Verifier role has not run yet.\".",
+    "- Every navigator.evidence item must include useForGuess.",
+    "- Set useForGuess=false for overlay or uncertain evidence.",
+    "- Set useForGuess=true only for physical evidence that should influence geolocation.",
     outputFormatRules()
   ].join("\n");
 }
@@ -157,6 +180,13 @@ export function buildVerifierPrompt(params: {
     "Confidence is part of the evidence. Moderate-confidence city-level guesses are still provisional; they should usually become a continue request for one disambiguating clue, or a revision to a broader area, unless the evidence is unusually distinctive.",
     "",
     "Movement is optional when the evidence is already strong. Google-rendered road labels, visible business clusters, and missing physical cross-street signs are reasons to calibrate confidence rather than reasons to reject a plausible answer. A continue decision should name the single missing clue that would actually change the likely city.",
+    "Overlay/evidence validation:",
+    "- Check every text clue used by the Geographer.",
+    "- Reject or downgrade clues that appear to be Google Maps overlays, Street View road labels, POI labels, UI text, or map-rendered text.",
+    "- If a road name appears flat on the pavement without a visible physical road sign or real painted marking, treat it as overlay or uncertain.",
+    "- Do not accept a guess whose strongest evidence is overlay or uncertain text.",
+    "- Physical evidence includes real signs, real building text, vehicle markings, road markings, architecture, vegetation, and environmental cues.",
+    "- If overlay evidence influenced the guess, set verifier.decision to revise or continue.",
     "",
     "Output rules:",
     "- Copy the Navigator survey object.",
@@ -217,18 +247,39 @@ function explorationGraphSection(graph: ExplorationGraphSummary | undefined): st
   const edges = graph.edges
     .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
     .slice(-18);
-  const evidence = graph.evidence.slice(-24).map((entry) => ({
+  const usable = usableEvidence(graph.evidence);
+  const rejected = rejectedEvidence(graph.evidence);
+  // const evidence = graph.evidence.slice(-24).map((entry) => ({
+  //   type: entry.type,
+  //   source: entry.source,
+  //   text: entry.text,
+  //   confidence: round(entry.confidence),
+  //   nodeId: entry.nodeId,
+  //   frameId: entry.frameId
+  // }));
+  const usableEvidenceEntries = usable.slice(-24).map((entry) => ({
     type: entry.type,
     source: entry.source,
     text: entry.text,
     confidence: round(entry.confidence),
     nodeId: entry.nodeId,
-    frameId: entry.frameId
+    frameId: entry.frameId,
+  }));
+
+  const rejectedEvidenceEntries = rejected.slice(-24).map((entry) => ({
+    type: entry.type,
+    source: entry.source,
+    text: entry.text,
+    confidence: round(entry.confidence),
+    nodeId: entry.nodeId,
+    frameId: entry.frameId,
   }));
   return [
     "Persistent 2.5D/topological scene memory:",
-    JSON.stringify({ nodes, edges, evidence, currentNodeId: graph.currentNodeId }, null, 2),
+    JSON.stringify({ nodes, edges, usableEvidenceEntries, rejectedEvidenceEntries, currentNodeId: graph.currentNodeId }, null, 2),
     "Use this memory to remember physical nodes, camera directions, and extracted evidence without relying on hidden coordinates.",
+    "Only use usableEvidence for geolocation hypotheses.",
+    "Rejected evidence contains overlay, uncertain, or otherwise excluded clues and must not influence the guess.",
     ""
   ].join("\n");
 }
